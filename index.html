@@ -152,7 +152,7 @@
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.4</small></div>
+    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.5</small></div>
     <div style="display:flex;gap:.4rem">
       <button class="export" id="wakeBtn" type="button" aria-pressed="true" title="화면 꺼짐 방지">🔆 화면유지</button>
       <button class="export" id="exportBtn" type="button">내보내기</button>
@@ -570,39 +570,57 @@
 
   // ── 음성 (음성테스트에서 검증된 iOS-safe 엔진) ──
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  var activeRec=null, stopActive=null;
+  var listening=false, acc="", interimTxt="", rec=null, userStop=false, finalized=false, restartT=null;
   var mic=document.getElementById("mic"), micHint=document.getElementById("micHint");
   var isIOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
   if(SR && isIOS){ var n=document.getElementById("iosNote"); n.classList.add("show"); n.innerHTML="아이폰은 <b>Safari</b>에서, 설정 › 일반 › 키보드 › <b>받아쓰기 켜기</b>가 필요해요. 침묵으로 자동종료되니 다 말하면 마이크를 다시 탭해 종료하세요."; }
   if(!SR){ var e=document.getElementById("errNote"); e.classList.add("show"); e.textContent="이 브라우저는 음성 인식을 지원하지 않아요. 아래 텍스트 입력을 쓰세요."; mic.disabled=true; }
 
+  // 침묵으로 iOS가 세션을 끊어도 자동 재시작해 이어감. 종료는 오직 마이크 재탭.
+  function micStart(){
+    if(!SR) return;
+    userStop=false; finalized=false; acc=""; interimTxt="";
+    listening=true; mic.dataset.on="1"; mic.textContent="⏹";
+    micHint.textContent="듣는 중… 다 부르면 마이크를 다시 탭해 종료"; hideErr();
+    micSpawn();
+  }
+  function micSpawn(){
+    try{ rec=new SR(); }catch(e){ return; }
+    rec.lang="ko-KR"; rec.interimResults=true; rec.continuous=true; rec.maxAlternatives=1;
+    rec.onresult=function(ev){
+      var it="";
+      for(var i=ev.resultIndex;i<ev.results.length;i++){ var r=ev.results[i]; if(r.isFinal) acc+=r[0].transcript+" "; else it+=r[0].transcript; }
+      interimTxt=it; micHint.innerHTML='<b>'+esc((acc+" "+it).trim())+'</b>';
+    };
+    rec.onerror=function(ev){
+      if(ev.error==="not-allowed"||ev.error==="service-not-allowed"){ showErr("마이크/받아쓰기 권한을 확인하세요 (설정 › 일반 › 키보드 › 받아쓰기)."); userStop=true; }
+      // no-speech / aborted / network → onend의 자동 재시작으로 이어감
+    };
+    rec.onend=function(){
+      if(userStop || !listening){ micFinalize(); return; }
+      if(restartT) clearTimeout(restartT);
+      restartT=setTimeout(function(){ if(listening && !userStop) micSpawn(); }, 250);
+    };
+    try{ rec.start(); }catch(e){}
+  }
+  function micStop(){
+    userStop=true; listening=false;
+    mic.dataset.on="0"; mic.textContent="🎤"; micHint.textContent="정리 중…";
+    if(restartT) clearTimeout(restartT);
+    try{ rec&&rec.stop(); }catch(e){}
+    setTimeout(function(){ try{ rec&&rec.abort(); }catch(e){} }, 300);
+    setTimeout(micFinalize, 700);
+  }
+  function micFinalize(){
+    if(finalized || !userStop) return;
+    finalized=true; listening=false; mic.dataset.on="0"; mic.textContent="🎤";
+    var text=(acc+" "+interimTxt).trim();
+    micHint.textContent = text? '“'+text+'”' : "탭해서 말하기 — 예: “두부 계란 대파 샀어”";
+    if(text) startConfirm(text);
+  }
   mic.addEventListener("click",function(){
     acquireWake();
-    if(activeRec){ if(stopActive) stopActive(); return; }
-    if(!SR) return;
-    var rec=new SR(); rec.lang="ko-KR"; rec.interimResults=true; rec.continuous=true; rec.maxAlternatives=1;
-    var acc="", lastInterim="", done=false;
-    activeRec=rec;
-    function finish(){
-      if(done)return; done=true; activeRec=null; stopActive=null;
-      mic.dataset.on="0"; mic.textContent="🎤";
-      var text=(acc+" "+lastInterim).trim();
-      micHint.textContent = text? '“'+text+'”' : "탭해서 말하기";
-      if(text) startConfirm(text);
-    }
-    stopActive=function(){ mic.dataset.on="0"; mic.textContent="🎤"; try{rec.stop();}catch(e){} setTimeout(function(){try{rec.abort();}catch(e){}},400); setTimeout(finish,1000); };
-    rec.onresult=function(ev){
-      var interim="";
-      for(var i=ev.resultIndex;i<ev.results.length;i++){ var r=ev.results[i]; if(r.isFinal) acc+=r[0].transcript; else interim+=r[0].transcript; }
-      lastInterim=interim; micHint.innerHTML='<b>'+esc((acc+" "+interim).trim())+'</b>';
-    };
-    rec.onerror=function(ev){ if(ev.error==="no-speech"||ev.error==="aborted")return;
-      var e=document.getElementById("errNote"); e.classList.add("show");
-      e.textContent = ev.error==="not-allowed"||ev.error==="service-not-allowed" ? "마이크/받아쓰기 권한을 확인하세요 (설정 › 일반 › 키보드 › 받아쓰기)." : ("오류: "+ev.error);
-    };
-    rec.onend=finish;
-    hideErr(); mic.dataset.on="1"; mic.textContent="⏹"; micHint.textContent="듣는 중… 다 말하면 다시 탭";
-    try{ rec.start(); }catch(e){ finish(); }
+    if(listening) micStop(); else micStart();
   });
 
   // ── 내보내기 (마스터 확장 + 재고 → 텍스트) ──
