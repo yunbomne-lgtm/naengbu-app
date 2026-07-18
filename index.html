@@ -1,4 +1,4 @@
-<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.12 (2026-07-18)
+<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.13 (2026-07-18)
      자체완결 웹앱 · Web Speech(ko-KR) + 규칙기반 재료 매칭 + localStorage
      목적: 냉장고 재료를 실제로 입력하며 재료 마스터·alias를 실측으로 다듬는다.
      v0.9: Supabase 배선 — 로컬 우선 + 공유 냉장고 동기화(둘이 냉장고 하나). PostgREST fetch, 라이브러리 무의존. -->
@@ -157,6 +157,19 @@
   .menu-item .mn{font-weight:650;font-size:1rem}
   .menu-item .mc{font-size:.72rem;color:var(--muted);margin-left:.35rem}
   .menu-item .arw{color:var(--muted);font-size:1.2rem;line-height:1}
+  .rec-top{display:flex;justify-content:flex-end;margin-bottom:.6rem}
+  .menu-add-btn{font:inherit;font-size:.82rem;font-weight:700;padding:.4rem .85rem;border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);border-radius:999px;cursor:pointer}
+  .menu-form{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:.8rem;margin-bottom:.8rem;display:flex;flex-direction:column;gap:.5rem}
+  .menu-form input,.menu-form select,.menu-form textarea{font:inherit;font-size:.92rem;padding:.55rem .65rem;border:1px solid var(--line);border-radius:9px;background:var(--ground);color:var(--ink);width:100%}
+  .menu-form textarea{resize:vertical;line-height:1.5}
+  .mf-row{display:flex;gap:.5rem}
+  .mf-row select{flex:0 0 42%}
+  .mf-actions{display:flex;gap:.5rem}
+  .mf-save{flex:1;font:inherit;font-weight:800;padding:.55rem;border:0;border-radius:9px;background:var(--accent);color:#fff;cursor:pointer}
+  :root[data-theme="dark"] .mf-save{color:#0d1114}
+  @media(prefers-color-scheme:dark){.mf-save{color:#0d1114}}
+  .mf-save:disabled{opacity:.55}
+  .mf-cancel{font:inherit;font-weight:700;padding:.55rem .95rem;border:1px solid var(--line);border-radius:9px;background:var(--raised);color:var(--muted);cursor:pointer}
   /* 레시피 상세 — 부엌에서 폰 세워두고 보기 (글자 크게) */
   .recipe-detail .rback{font:inherit;font-size:.86rem;font-weight:700;color:var(--accent);background:none;border:0;cursor:pointer;padding:.2rem 0;margin-bottom:.4rem}
   .recipe-detail h2{font-size:1.5rem;margin:.1rem 0 .15rem;letter-spacing:-.01em}
@@ -193,7 +206,7 @@
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.12</small></div>
+    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.13</small></div>
     <div style="display:flex;gap:.4rem">
       <span id="syncDot" title="공유 동기화 상태" style="align-self:center;font-size:.72rem;font-weight:700;color:var(--muted)">☁︎…</span>
       <button class="export" id="wakeBtn" type="button" aria-pressed="true" title="화면 꺼짐 방지">🔆 화면유지</button>
@@ -202,17 +215,17 @@
   </div>
   <div class="head-inner">
     <div class="tabs" role="tablist" style="flex:1">
-      <button role="tab" aria-selected="true" data-view="input">입력</button>
-      <button role="tab" aria-selected="false" data-view="stock">재고</button>
+      <button role="tab" aria-selected="true" data-view="recommend">추천</button>
+      <button role="tab" aria-selected="false" data-view="input">입력</button>
       <button role="tab" aria-selected="false" data-view="recipe">레시피</button>
-      <button role="tab" aria-selected="false" data-view="recommend">추천</button>
+      <button role="tab" aria-selected="false" data-view="stock">재고</button>
     </div>
   </div>
 </header>
 
 <div class="wrap">
   <!-- 입력 -->
-  <section class="view" id="view-input">
+  <section class="view hidden" id="view-input">
     <div class="mic-wrap">
       <button class="mic" id="mic" type="button" data-on="0" aria-label="녹음">🎤</button>
       <div class="mic-hint" id="micHint">탭해서 말하기 — 예: “두부 계란 대파 샀어”</div>
@@ -254,13 +267,29 @@
 
   <!-- 레시피 -->
   <section class="view hidden" id="view-recipe">
+    <div class="rec-top" id="recTop">
+      <button class="menu-add-btn" id="menuAddBtn" type="button">+ 레시피 추가</button>
+    </div>
+    <div class="menu-form hidden" id="menuForm">
+      <input id="mfName" type="text" placeholder="메뉴 이름 (예: 계란찜)" autocomplete="off">
+      <div class="mf-row">
+        <select id="mfCat"><option>메인</option><option>반찬</option><option>기타</option><option>신규</option></select>
+        <input id="mfServ" type="text" placeholder="기준 인분 (선택)" autocomplete="off">
+      </div>
+      <textarea id="mfText" rows="6" placeholder="레시피 본문 — 재료와 조리 순서를 그대로 적어요"></textarea>
+      <input id="mfUrl" type="text" placeholder="원문 링크 (선택)" autocomplete="off">
+      <div class="mf-actions">
+        <button class="mf-save" id="mfSave" type="button">저장</button>
+        <button class="mf-cancel" id="mfCancel" type="button">취소</button>
+      </div>
+    </div>
     <div class="rec-cats" id="recCats"></div>
     <div class="menu-list" id="menuList"><div class="empty">불러오는 중…</div></div>
     <div class="recipe-detail hidden" id="recipeDetail"></div>
   </section>
 
   <!-- 추천 -->
-  <section class="view hidden" id="view-recommend">
+  <section class="view" id="view-recommend">
     <div class="rec-intro" id="recIntro">
       <button class="rec-go" id="recGo" type="button">🍚 오늘 저녁 추천 받기</button>
       <div class="rec-sub" id="recSub">냉장고 재고 + 우리집 레시피로 한 상 7개를 골라줘요 (약 30초)</div>
@@ -782,6 +811,7 @@
 
   // ── 레시피 (menus) ──
   var menusCache=null, recCat="전체";
+  var REC_CAT_ORDER=["메인","반찬","기타","신규"];   // 분류 노출 순서 고정
   function loadMenus(){
     if(menusCache){ renderMenus(); return; }
     sbFetch("GET","/menus?household_id=eq."+SB_HH+"&select=name,category,base_servings,recipe_text,recipe_url&order=category,name")
@@ -791,8 +821,12 @@
   function renderMenus(){
     var listEl=document.getElementById("menuList"), catsEl=document.getElementById("recCats"), detEl=document.getElementById("recipeDetail");
     detEl.classList.add("hidden"); listEl.classList.remove("hidden"); catsEl.classList.remove("hidden");
-    if(!menusCache || !menusCache.length){ listEl.innerHTML='<div class="empty">아직 레시피가 없어요.</div>'; catsEl.innerHTML=""; return; }
-    var cats=["전체"]; menusCache.forEach(function(m){ if(cats.indexOf(m.category)<0) cats.push(m.category); });
+    document.getElementById("recTop").classList.remove("hidden");
+    if(!menusCache || !menusCache.length){ listEl.innerHTML='<div class="empty">아직 레시피가 없어요. 위 “+ 레시피 추가”로 넣어보세요.</div>'; catsEl.innerHTML=""; return; }
+    var present={}; menusCache.forEach(function(m){ present[m.category]=true; });
+    var cats=["전체"];
+    REC_CAT_ORDER.forEach(function(c){ if(present[c]) cats.push(c); });        // 메인·반찬·기타·신규 순
+    menusCache.forEach(function(m){ if(cats.indexOf(m.category)<0) cats.push(m.category); }); // 그 외 분류는 뒤에
     catsEl.innerHTML="";
     cats.forEach(function(c){
       var b=document.createElement("button"); b.type="button"; b.textContent=c; b.setAttribute("aria-selected", c===recCat?"true":"false");
@@ -811,6 +845,7 @@
   function showRecipe(m){
     var listEl=document.getElementById("menuList"), catsEl=document.getElementById("recCats"), detEl=document.getElementById("recipeDetail");
     listEl.classList.add("hidden"); catsEl.classList.add("hidden"); detEl.classList.remove("hidden");
+    document.getElementById("recTop").classList.add("hidden"); document.getElementById("menuForm").classList.add("hidden");
     var url = m.recipe_url ? '<a class="rurl" href="'+esc(m.recipe_url)+'" target="_blank" rel="noopener">원문 보기 ↗</a>' : '';
     detEl.innerHTML='<button class="rback" type="button" id="rback">‹ 목록</button>'+
       '<h2>'+esc(m.name)+'</h2><div class="rmeta">'+esc(m.category)+(m.base_servings?" · "+esc(m.base_servings):"")+'</div>'+
@@ -818,6 +853,29 @@
     document.getElementById("rback").addEventListener("click",renderMenus);
     window.scrollTo(0,0);
   }
+  // 레시피 추가 (Supabase menus에 저장 → 온라인 반영, 다른 폰도 공유)
+  document.getElementById("menuAddBtn").addEventListener("click",function(){
+    var f=document.getElementById("menuForm"); f.classList.toggle("hidden");
+    if(!f.classList.contains("hidden")) document.getElementById("mfName").focus();
+  });
+  document.getElementById("mfCancel").addEventListener("click",function(){ document.getElementById("menuForm").classList.add("hidden"); });
+  document.getElementById("mfSave").addEventListener("click",function(){
+    var name=document.getElementById("mfName").value.trim();
+    if(!name){ toast("메뉴 이름을 입력하세요"); return; }
+    var row={ household_id:SB_HH, name:name, category:document.getElementById("mfCat").value,
+      base_servings:document.getElementById("mfServ").value.trim()||null,
+      recipe_text:document.getElementById("mfText").value.trim()||null,
+      recipe_url:document.getElementById("mfUrl").value.trim()||null, is_seed:false };
+    var btn=document.getElementById("mfSave"); btn.disabled=true;
+    sbFetch("POST","/menus?on_conflict=household_id,name",[row],{Prefer:"resolution=merge-duplicates,return=minimal"})
+      .then(function(){
+        btn.disabled=false; menusCache=null;
+        document.getElementById("menuForm").classList.add("hidden");
+        ["mfName","mfServ","mfText","mfUrl"].forEach(function(id){ document.getElementById(id).value=""; });
+        toast("레시피 저장됨 ✓"); loadMenus();
+      })
+      .catch(function(){ btn.disabled=false; toast("저장 실패 — 연결을 확인하세요"); });
+  });
 
   // ── 추천 (Vercel 함수 → Claude) ──
   var REC_URL="https://naengbu-api.vercel.app/api/recommend";
@@ -1033,7 +1091,7 @@
   function hideErr(){ document.getElementById("errNote").classList.remove("show"); }
   function esc(s){ return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
 
-  renderStock(); renderSession(); acquireWake();
+  renderStock(); renderSession(); acquireWake(); loadRecCache();
   sbBoot();   // 공유 냉장고 동기화 (로컬 우선 → 당겨 병합 → 밀어올림)
 })();
 </script>
