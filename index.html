@@ -1,4 +1,4 @@
-<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.13 (2026-07-18)
+<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.14 (2026-07-18)
      자체완결 웹앱 · Web Speech(ko-KR) + 규칙기반 재료 매칭 + localStorage
      목적: 냉장고 재료를 실제로 입력하며 재료 마스터·alias를 실측으로 다듬는다.
      v0.9: Supabase 배선 — 로컬 우선 + 공유 냉장고 동기화(둘이 냉장고 하나). PostgREST fetch, 라이브러리 무의존. -->
@@ -72,7 +72,7 @@
   .sess-chip.gone{background:var(--line-soft);color:var(--muted);text-decoration:line-through}
 
   .tabs{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;background:var(--line-soft);padding:4px;border-radius:11px;margin-top:.55rem}
-  .tabs button{font:inherit;font-size:.9rem;font-weight:650;padding:.5rem;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
+  .tabs button{font:inherit;font-size:.78rem;font-weight:650;padding:.5rem .15rem;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer;white-space:nowrap;letter-spacing:-.02em}
   .tabs button[aria-selected="true"]{background:var(--raised);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 
   .view{padding-top:1rem}
@@ -201,12 +201,22 @@
   .rc-reject{font:inherit;font-weight:700;font-size:.9rem;padding:.6rem 1.1rem;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--muted);cursor:pointer}
   .rc-recipe{margin-top:.7rem;white-space:pre-wrap;word-break:break-word;font-size:1.02rem;line-height:1.65;background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:.85rem}
 
+  /* 장보기 */
+  .shop-count{font-size:.85rem;color:var(--muted);margin-bottom:.6rem;font-weight:700}
+  .shop-list{display:flex;flex-direction:column;gap:.4rem}
+  .shop-item{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;font:inherit;background:var(--raised);border:1px solid var(--line);border-radius:11px;padding:.7rem .85rem;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .shop-item .chk{font-size:1.15rem;color:var(--muted);line-height:1}
+  .shop-item .snm{font-weight:650;font-size:1rem;flex:1}
+  .shop-item .srsn{font-size:.72rem;color:var(--muted)}
+  .shop-item.got{opacity:.5}
+  .shop-item.got .snm{text-decoration:line-through}
+
   :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.13</small></div>
+    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.14</small></div>
     <div style="display:flex;gap:.4rem">
       <span id="syncDot" title="공유 동기화 상태" style="align-self:center;font-size:.72rem;font-weight:700;color:var(--muted)">☁︎…</span>
       <button class="export" id="wakeBtn" type="button" aria-pressed="true" title="화면 꺼짐 방지">🔆 화면유지</button>
@@ -215,10 +225,11 @@
   </div>
   <div class="head-inner">
     <div class="tabs" role="tablist" style="flex:1">
-      <button role="tab" aria-selected="true" data-view="recommend">추천</button>
-      <button role="tab" aria-selected="false" data-view="input">입력</button>
+      <button role="tab" aria-selected="true" data-view="recommend">오늘의저녁</button>
+      <button role="tab" aria-selected="false" data-view="input">식재료</button>
       <button role="tab" aria-selected="false" data-view="recipe">레시피</button>
-      <button role="tab" aria-selected="false" data-view="stock">재고</button>
+      <button role="tab" aria-selected="false" data-view="shop">장보기</button>
+      <button role="tab" aria-selected="false" data-view="stock">냉장고</button>
     </div>
   </div>
 </header>
@@ -288,7 +299,13 @@
     <div class="recipe-detail hidden" id="recipeDetail"></div>
   </section>
 
-  <!-- 추천 -->
+  <!-- 장보기 (파생 뷰: 없음 재료 ∪ 오늘 수락 카드 사올것) -->
+  <section class="view hidden" id="view-shop">
+    <div class="shop-head" id="shopHead"></div>
+    <div class="shop-list" id="shopList"></div>
+  </section>
+
+  <!-- 오늘의저녁 (추천) -->
   <section class="view" id="view-recommend">
     <div class="rec-intro" id="recIntro">
       <button class="rec-go" id="recGo" type="button">🍚 오늘 저녁 추천 받기</button>
@@ -881,13 +898,16 @@
   var REC_URL="https://naengbu-api.vercel.app/api/recommend";
   var LS_REC="naengbu_rec";
   function recToday(){ return new Date().toLocaleDateString("en-CA"); } // YYYY-MM-DD(로컬)
-  function loadRecCache(){
+  // auto=true면 오늘 캐시가 없을 때 자동으로 추천 생성(서비스 열면 오늘의저녁 자동 구성)
+  function loadRecCache(auto){
     var c=load(LS_REC,null);
     if(c && c.date===recToday() && c.cards && c.cards.length){
       document.getElementById("recGo").textContent="🔄 다시 추천";
       document.getElementById("recSub").textContent="오늘 받은 추천이에요 (다시 받으려면 위 버튼)";
       renderRecCards(c.cards, c.status||{});
+      return;
     }
+    if(auto) fetchRec();
   }
   function fetchRec(){
     var go=document.getElementById("recGo"), sub=document.getElementById("recSub");
@@ -953,6 +973,39 @@
   }
   document.getElementById("recGo").addEventListener("click",fetchRec);
 
+  // ── 장보기 (파생: 없음 재료 ∪ 오늘 수락 카드 사올것) ──
+  var shopChecked={};
+  function computeShop(){
+    var items={};
+    function add(name,reason){ if(!name)return; if(!items[name]) items[name]={name:name,reasons:[]}; if(items[name].reasons.indexOf(reason)<0) items[name].reasons.push(reason); }
+    // 1) 없음 재료 (어느 칸이든 없음이고 어디에도 있음 아님)
+    Object.keys(inv).forEach(function(k){
+      var b=inv[k], any있=false, any없=false;
+      STORAGES.forEach(function(s){ if(b[s]){ if(b[s].status==="있음")any있=true; else any없=true; } });
+      if(any없 && !any있) add(k,"떨어짐");
+    });
+    // 2) 오늘 수락한 카드의 사올것
+    var c=load(LS_REC,null);
+    if(c && c.date===recToday() && c.cards){
+      var stt=c.status||{};
+      c.cards.forEach(function(card,idx){ if(stt[idx]==="수락"){ (card.사올것||[]).forEach(function(nm){ add(nm,"오늘 메뉴"); }); } });
+    }
+    return Object.keys(items).map(function(k){ return items[k]; }).sort(function(a,b){ return a.name.localeCompare(b.name,"ko"); });
+  }
+  function renderShop(){
+    var head=document.getElementById("shopHead"), listEl=document.getElementById("shopList");
+    var items=computeShop();
+    head.innerHTML = items.length ? '<div class="shop-count">살 것 '+items.length+'개 — 사면 탭해서 지워요</div>' : '';
+    listEl.innerHTML="";
+    if(!items.length){ listEl.innerHTML='<div class="empty">지금 살 게 없어요. 재료가 떨어지거나 오늘의저녁을 고르면 여기 모여요.</div>'; return; }
+    items.forEach(function(it){
+      var row=document.createElement("button"); row.type="button"; row.className="shop-item"+(shopChecked[it.name]?" got":"");
+      row.innerHTML='<span class="chk">'+(shopChecked[it.name]?"☑":"☐")+'</span><span class="snm">'+esc(it.name)+'</span><span class="srsn">'+esc(it.reasons.join(" · "))+'</span>';
+      row.addEventListener("click",function(){ shopChecked[it.name]=!shopChecked[it.name]; renderShop(); });
+      listEl.appendChild(row);
+    });
+  }
+
   // ── 탭 전환 ──
   document.querySelector(".tabs").addEventListener("click",function(e){
     var b=e.target.closest("button"); if(!b)return;
@@ -962,7 +1015,8 @@
     var show=document.getElementById("view-"+v); if(show) show.classList.remove("hidden");
     if(v==="stock") renderStock();
     if(v==="recipe") loadMenus();
-    if(v==="recommend") loadRecCache();
+    if(v==="shop") renderShop();
+    if(v==="recommend") loadRecCache(false);
   });
   document.getElementById("stotabs").addEventListener("click",function(e){
     var b=e.target.closest("button"); if(!b)return;
@@ -1091,7 +1145,7 @@
   function hideErr(){ document.getElementById("errNote").classList.remove("show"); }
   function esc(s){ return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
 
-  renderStock(); renderSession(); acquireWake(); loadRecCache();
+  renderStock(); renderSession(); acquireWake(); loadRecCache(true);  // 열면 오늘의저녁 자동 구성
   sbBoot();   // 공유 냉장고 동기화 (로컬 우선 → 당겨 병합 → 밀어올림)
 })();
 </script>
