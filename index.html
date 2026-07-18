@@ -152,7 +152,7 @@
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.7</small></div>
+    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.8</small></div>
     <div style="display:flex;gap:.4rem">
       <button class="export" id="wakeBtn" type="button" aria-pressed="true" title="화면 꺼짐 방지">🔆 화면유지</button>
       <button class="export" id="exportBtn" type="button">내보내기</button>
@@ -284,12 +284,13 @@
     // 곡류·면
     {n:"쌀",s:"실온",m:"상비",c:"곡류·면"},
     {n:"밀가루",s:"실온",m:"상비",c:"곡류·면"},
-    {n:"부침가루",s:"실온",m:"상비",c:"곡류·면"},
+    {n:"부침가루",s:"냉장",m:"상비",c:"곡류·면"},
     {n:"라면",s:"실온",m:"상비",c:"곡류·면",a:["라면사리"]},
     {n:"우동면",s:"냉장",m:"상비",c:"곡류·면",a:["우동"]},
     {n:"떡",s:"냉장",m:"신선",c:"곡류·면",a:["떡볶이떡","가래떡"]},
     // 소스·양념
     {n:"간장",s:"실온",m:"상비",c:"소스·양념",a:["진간장","국간장"]},
+    {n:"양념간장",s:"냉장",m:"상비",c:"소스·양념",a:["맛간장","만능간장","제조간장"]},
     {n:"고추장",s:"냉장",m:"상비",c:"소스·양념"},
     {n:"된장",s:"냉장",m:"상비",c:"소스·양념",a:["미소된장","미소"]},
     {n:"설탕",s:"실온",m:"상비",c:"소스·양념"},
@@ -362,6 +363,19 @@
         delete inv[o]; changed=true; }
     });
     if(changed) save(LS_INV,inv);
+  })();
+
+  // 일회성: 기존 냉장 '간장'은 양념간장이었음 (사용자 확인)
+  (function migV1(){
+    if(localStorage.getItem("naengbu_migv")) return;
+    if(inv["간장"] && inv["간장"]["냉장"]){
+      inv["양념간장"]=inv["양념간장"]||{};
+      if(!inv["양념간장"]["냉장"]) inv["양념간장"]["냉장"]=inv["간장"]["냉장"];
+      delete inv["간장"]["냉장"];
+      if(Object.keys(inv["간장"]).length===0) delete inv["간장"];
+      save(LS_INV,inv);
+    }
+    try{ localStorage.setItem("naengbu_migv","1"); }catch(e){}
   })();
 
   function allMaster(){ return MASTER.concat(ext); }
