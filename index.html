@@ -55,6 +55,20 @@
   .brand small{color:var(--muted);font-weight:500;font-size:.72rem;margin-left:.35rem}
   .export{font:inherit;font-size:.74rem;font-weight:700;padding:.35rem .6rem;border-radius:8px;cursor:pointer;
     border:1px solid var(--line);background:var(--raised);color:var(--ink-soft);-webkit-tap-highlight-color:transparent}
+  .export[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+  .export:disabled{opacity:.5}
+
+  /* 세션 피드 */
+  .session{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:.7rem .8rem;margin-top:1rem}
+  .session .sh{display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem}
+  .session .sh b{font-size:.82rem}
+  .session .sh .clr{font:inherit;font-size:.74rem;color:var(--muted);background:none;border:0;cursor:pointer;text-decoration:underline}
+  .sess-chips{display:flex;flex-wrap:wrap;gap:.35rem}
+  .sess-chip{font-size:.8rem;font-weight:600;padding:.25rem .55rem;border-radius:999px}
+  .sess-chip[data-s="냉동"]{background:var(--cold-soft);color:var(--cold)}
+  .sess-chip[data-s="냉장"]{background:var(--cool-soft);color:var(--cool)}
+  .sess-chip[data-s="실온"]{background:var(--room-soft);color:var(--room)}
+  .sess-chip.gone{background:var(--line-soft);color:var(--muted);text-decoration:line-through}
 
   .tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--line-soft);padding:4px;border-radius:11px;margin-top:.55rem}
   .tabs button{font:inherit;font-size:.9rem;font-weight:650;padding:.5rem;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
@@ -138,8 +152,11 @@
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.2</small></div>
-    <button class="export" id="exportBtn" type="button">내보내기</button>
+    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.3</small></div>
+    <div style="display:flex;gap:.4rem">
+      <button class="export" id="wakeBtn" type="button" aria-pressed="true" title="화면 꺼짐 방지">🔆 화면유지</button>
+      <button class="export" id="exportBtn" type="button">내보내기</button>
+    </div>
   </div>
   <div class="head-inner">
     <div class="tabs" role="tablist" style="flex:1">
@@ -160,6 +177,8 @@
       <input id="textin" type="text" placeholder="⌨️ 직접 입력 (음성이 어려울 때)" autocomplete="off">
       <button id="textgo" type="button">분석</button>
     </div>
+
+    <div class="session hidden" id="session"></div>
 
     <div class="banner warn" id="iosNote"></div>
     <div class="banner err" id="errNote"></div>
@@ -308,11 +327,12 @@
   var STORAGES = ["냉동","냉장","실온"];
 
   // ── localStorage 상태 ──
-  var LS_INV="naengbu_inv", LS_EXT="naengbu_masterext";
+  var LS_INV="naengbu_inv", LS_EXT="naengbu_masterext", LS_SESS="naengbu_session";
   function load(k,d){ try{ return JSON.parse(localStorage.getItem(k))||d; }catch(e){ return d; } }
   function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
   var inv = load(LS_INV,{});      // {재료명:{status,storage,updated,src}}
   var ext = load(LS_EXT,[]);      // 사용자가 추가한 신규 재료 (MASTER와 동형)
+  var session = load(LS_SESS,[]); // 이번 세션에 담은 것 (연속성 피드)
 
   function allMaster(){ return MASTER.concat(ext); }
 
@@ -476,8 +496,10 @@
         inv[d.name]={status:"있음",storage:d.storage,updated:now,src:"음성"};
       }
     });
-    save(LS_EXT,ext); save(LS_INV,inv);
+    draft.forEach(function(d){ session.push({name:d.name,storage:d.storage,mode:draftMode}); });
+    save(LS_EXT,ext); save(LS_INV,inv); save(LS_SESS,session);
     SURF=buildSurfaces();
+    renderSession();
     var n=draft.length; draft=[]; draftBatch=null;
     confirmEl.classList.add("hidden"); rowsEl.innerHTML=""; batchEl.classList.add("hidden");
     toast(draftMode==="소진"? (n+"개 없음 처리") : (n+"개 담음 ✓"));
@@ -520,7 +542,7 @@
   });
 
   // ── 텍스트/추가 입력 ──
-  document.getElementById("textgo").addEventListener("click",function(){ var v=document.getElementById("textin").value; if(v.trim()){ startConfirm(v); document.getElementById("textin").value=""; } });
+  document.getElementById("textgo").addEventListener("click",function(){ acquireWake(); var v=document.getElementById("textin").value; if(v.trim()){ startConfirm(v); document.getElementById("textin").value=""; } });
   document.getElementById("textin").addEventListener("keydown",function(e){ if(e.key==="Enter") document.getElementById("textgo").click(); });
   document.getElementById("addgo").addEventListener("click",function(){ var el=document.getElementById("addin"); if(el.value.trim()){ addByName(el.value); el.value=""; } });
   document.getElementById("addin").addEventListener("keydown",function(e){ if(e.key==="Enter") document.getElementById("addgo").click(); });
@@ -536,6 +558,7 @@
   if(!SR){ var e=document.getElementById("errNote"); e.classList.add("show"); e.textContent="이 브라우저는 음성 인식을 지원하지 않아요. 아래 텍스트 입력을 쓰세요."; mic.disabled=true; }
 
   mic.addEventListener("click",function(){
+    acquireWake();
     if(activeRec){ if(stopActive) stopActive(); return; }
     if(!SR) return;
     var rec=new SR(); rec.lang="ko-KR"; rec.interimResults=true; rec.continuous=true; rec.maxAlternatives=1;
@@ -583,6 +606,33 @@
     function fb(t){ var ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch(e){} document.body.removeChild(ta); toast("복사됨 ✓"); }
   });
 
+  // ── 세션 피드 (연속성) ──
+  function renderSession(){
+    var el=document.getElementById("session");
+    if(!session.length){ el.classList.add("hidden"); el.innerHTML=""; return; }
+    el.classList.remove("hidden");
+    var chips=session.map(function(x){ return '<span class="sess-chip'+(x.mode==="소진"?" gone":"")+'" data-s="'+esc(x.storage)+'">'+esc(x.name)+'</span>'; }).join("");
+    el.innerHTML='<div class="sh"><b>이번에 담은 것 ('+session.length+')</b><button class="clr" id="sessclr" type="button">세션 비우기</button></div><div class="sess-chips">'+chips+'</div>';
+    document.getElementById("sessclr").addEventListener("click",function(){ session=[]; save(LS_SESS,session); renderSession(); toast("세션 비움"); });
+  }
+
+  // ── 화면 꺼짐 방지 (Wake Lock, iOS 16.4+) ──
+  var wakeLock=null, keepAwake=true;
+  function updateWakeChip(){ var b=document.getElementById("wakeBtn"); if(b) b.setAttribute("aria-pressed", keepAwake?"true":"false"); }
+  function acquireWake(){
+    if(!keepAwake || !("wakeLock" in navigator) || wakeLock) return;
+    navigator.wakeLock.request("screen").then(function(wl){ wakeLock=wl; wl.addEventListener("release",function(){ wakeLock=null; }); }).catch(function(){});
+  }
+  function releaseWake(){ if(wakeLock){ try{wakeLock.release();}catch(e){} wakeLock=null; } }
+  var wakeBtn=document.getElementById("wakeBtn");
+  if(!("wakeLock" in navigator)){ keepAwake=false; wakeBtn.textContent="🔆 미지원"; wakeBtn.disabled=true; }
+  updateWakeChip();
+  wakeBtn.addEventListener("click",function(){
+    keepAwake=!keepAwake; updateWakeChip();
+    if(keepAwake){ acquireWake(); toast("화면 유지 켬"); } else { releaseWake(); toast("화면 유지 끔"); }
+  });
+  document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible" && keepAwake) acquireWake(); });
+
   // ── 유틸 ──
   var toastEl=document.getElementById("toast"), toastT=null;
   function toast(msg){ toastEl.textContent=msg; toastEl.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(function(){toastEl.classList.remove("show");},1600); }
@@ -590,6 +640,6 @@
   function hideErr(){ document.getElementById("errNote").classList.remove("show"); }
   function esc(s){ return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
 
-  renderStock();
+  renderStock(); renderSession(); acquireWake();
 })();
 </script>
