@@ -1,0 +1,561 @@
+<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.1 (2026-07-18)
+     자체완결 웹앱 · Web Speech(ko-KR) + 규칙기반 재료 매칭 + localStorage
+     목적: 냉장고 재료를 실제로 입력하며 재료 마스터·alias를 실측으로 다듬는다. -->
+<title>윤봄네 냉장고 — 입력</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+<style>
+  :root {
+    --ground:#FAFBFC; --raised:#FFFFFF; --ink:#15181C; --ink-soft:#444C57;
+    --muted:#6B7480; --line:#E2E6EB; --line-soft:#EDF0F3;
+    --accent:#2E5D4F; --accent-soft:#E8F0ED;
+    --open:#8A5D0B; --open-soft:#FBF2E0;
+    --rec:#D6473E; --rec-soft:#FBE9E7;
+    --cold:#2C6E9B; --cold-soft:#E6F0F7;   /* 냉동 */
+    --cool:#2E7D5B; --cool-soft:#E4F1EA;   /* 냉장 */
+    --room:#8A5D0B; --room-soft:#FBF2E0;   /* 실온 */
+    --measure:40rem;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  @media (prefers-color-scheme: dark){ :root{
+    --ground:#101317; --raised:#171B20; --ink:#EDF0F3; --ink-soft:#B4BCC6;
+    --muted:#838D99; --line:#2A3138; --line-soft:#21272D;
+    --accent:#7FBBA6; --accent-soft:#1B2A26; --open:#D6A455; --open-soft:#2A2318;
+    --rec:#F0857C; --rec-soft:#2E1B19;
+    --cold:#6FB0DA; --cold-soft:#152532; --cool:#78C79E; --cool-soft:#16281F;
+    --room:#E0AC63; --room-soft:#2A2013;
+  }}
+  :root[data-theme="dark"]{
+    --ground:#101317; --raised:#171B20; --ink:#EDF0F3; --ink-soft:#B4BCC6;
+    --muted:#838D99; --line:#2A3138; --line-soft:#21272D;
+    --accent:#7FBBA6; --accent-soft:#1B2A26; --open:#D6A455; --open-soft:#2A2318;
+    --rec:#F0857C; --rec-soft:#2E1B19;
+    --cold:#6FB0DA; --cold-soft:#152532; --cool:#78C79E; --cool-soft:#16281F;
+    --room:#E0AC63; --room-soft:#2A2013;
+  }
+  :root[data-theme="light"]{
+    --ground:#FAFBFC; --raised:#FFFFFF; --ink:#15181C; --ink-soft:#444C57;
+    --muted:#6B7480; --line:#E2E6EB; --line-soft:#EDF0F3;
+    --accent:#2E5D4F; --accent-soft:#E8F0ED; --open:#8A5D0B; --open-soft:#FBF2E0;
+    --rec:#D6473E; --rec-soft:#FBE9E7;
+    --cold:#2C6E9B; --cold-soft:#E6F0F7; --cool:#2E7D5B; --cool-soft:#E4F1EA;
+    --room:#8A5D0B; --room-soft:#FBF2E0;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-text-size-adjust:100%}
+  .wrap{max-width:var(--measure);margin:0 auto;padding:0 1rem 7rem}
+
+  header{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--ground) 90%,transparent);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+    padding:calc(0.6rem + env(safe-area-inset-top)) 1rem 0.55rem}
+  .head-inner{max-width:var(--measure);margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+  .brand{font-weight:700;letter-spacing:-.01em;font-size:1.05rem}
+  .brand small{color:var(--muted);font-weight:500;font-size:.72rem;margin-left:.35rem}
+  .export{font:inherit;font-size:.74rem;font-weight:700;padding:.35rem .6rem;border-radius:8px;cursor:pointer;
+    border:1px solid var(--line);background:var(--raised);color:var(--ink-soft);-webkit-tap-highlight-color:transparent}
+
+  .tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--line-soft);padding:4px;border-radius:11px;margin-top:.55rem}
+  .tabs button{font:inherit;font-size:.9rem;font-weight:650;padding:.5rem;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
+  .tabs button[aria-selected="true"]{background:var(--raised);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+  .view{padding-top:1rem}
+  .hidden{display:none}
+
+  /* 입력 */
+  .mic-wrap{display:flex;flex-direction:column;align-items:center;gap:.6rem;padding:1.2rem 0 .5rem}
+  .mic{width:5.5rem;height:5.5rem;border-radius:50%;border:0;cursor:pointer;background:var(--accent);color:#fff;
+    font-size:1.7rem;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(46,93,79,.35);
+    -webkit-tap-highlight-color:transparent}
+  :root[data-theme="dark"] .mic{color:#0d1114}
+  @media (prefers-color-scheme:dark){.mic{color:#0d1114}}
+  .mic[data-on="1"]{background:var(--rec);box-shadow:0 6px 18px rgba(214,71,62,.4);animation:pulse 1.1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+  @media (prefers-reduced-motion:reduce){.mic[data-on="1"]{animation:none}}
+  .mic-hint{font-size:.82rem;color:var(--muted);text-align:center;min-height:1.2rem}
+  .mic-hint b{color:var(--ink-soft)}
+
+  .textrow{display:flex;gap:.4rem;margin:.4rem 0 0}
+  .textrow input{flex:1;font:inherit;font-size:.95rem;padding:.6rem .7rem;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--ink)}
+  .textrow button{font:inherit;font-weight:700;font-size:.9rem;padding:0 .9rem;border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);border-radius:10px;cursor:pointer}
+
+  .banner{margin:.8rem 0 0;padding:.7rem .85rem;border-radius:11px;font-size:.85rem;display:none}
+  .banner.show{display:block}
+  .banner.warn{background:var(--open-soft);color:var(--open)}
+  .banner.err{background:var(--rec-soft);color:var(--rec)}
+
+  /* 컨펌 */
+  .confirm{margin-top:1.1rem}
+  .confirm h2{font-size:.76rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 .5rem;display:flex;justify-content:space-between}
+  .confirm h2 .mode{color:var(--rec)}
+  .rows{display:flex;flex-direction:column;gap:.5rem}
+  .row{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:.6rem .7rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+  .row .nm{font-weight:650;font-size:1rem;flex:1;min-width:5rem}
+  .row .nm .new{font-size:.66rem;font-weight:700;color:var(--open);background:var(--open-soft);padding:.1rem .35rem;border-radius:999px;margin-left:.35rem;vertical-align:middle}
+  .seg3{display:inline-flex;background:var(--line-soft);border-radius:9px;padding:3px;gap:2px}
+  .seg3 button{font:inherit;font-size:.76rem;font-weight:700;border:0;background:transparent;color:var(--muted);padding:.28rem .5rem;border-radius:7px;cursor:pointer;white-space:nowrap}
+  .seg3 button[data-on="1"][data-s="냉동"]{background:var(--cold-soft);color:var(--cold)}
+  .seg3 button[data-on="1"][data-s="냉장"]{background:var(--cool-soft);color:var(--cool)}
+  .seg3 button[data-on="1"][data-s="실온"]{background:var(--room-soft);color:var(--room)}
+  .row .del{font:inherit;border:0;background:none;color:var(--muted);font-size:1.15rem;cursor:pointer;padding:.1rem .3rem;line-height:1}
+  .newcat{flex-basis:100%;display:flex;gap:.4rem;align-items:center;margin-top:.15rem}
+  .newcat select{font:inherit;font-size:.8rem;padding:.35rem .4rem;border:1px solid var(--line);border-radius:8px;background:var(--ground);color:var(--ink)}
+  .newcat label{font-size:.72rem;color:var(--muted)}
+
+  .addrow{display:flex;gap:.4rem;margin-top:.55rem}
+  .addrow input{flex:1;font:inherit;font-size:.9rem;padding:.5rem .6rem;border:1px dashed var(--line);border-radius:10px;background:transparent;color:var(--ink)}
+  .addrow button{font:inherit;font-weight:700;font-size:.85rem;padding:0 .8rem;border:1px solid var(--line);background:var(--raised);color:var(--ink-soft);border-radius:10px;cursor:pointer}
+
+  .confirm-actions{display:flex;gap:.5rem;margin-top:.9rem}
+  .btn-primary{flex:1;font:inherit;font-weight:800;font-size:1rem;padding:.8rem;border:0;border-radius:12px;background:var(--accent);color:#fff;cursor:pointer}
+  :root[data-theme="dark"] .btn-primary{color:#0d1114}
+  @media (prefers-color-scheme:dark){.btn-primary{color:#0d1114}}
+  .btn-ghost{font:inherit;font-weight:700;font-size:.9rem;padding:.8rem 1rem;border:1px solid var(--line);border-radius:12px;background:var(--raised);color:var(--muted);cursor:pointer}
+
+  .toast{position:fixed;left:50%;bottom:5.5rem;transform:translateX(-50%);background:var(--ink);color:var(--ground);
+    padding:.55rem .9rem;border-radius:999px;font-size:.85rem;font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+  .toast.show{opacity:.95}
+
+  /* 재고 */
+  .stotabs{display:flex;gap:.4rem;margin-bottom:.8rem}
+  .stotabs button{font:inherit;font-size:.85rem;font-weight:700;padding:.45rem .8rem;border-radius:999px;border:1px solid var(--line);background:var(--raised);color:var(--muted);cursor:pointer}
+  .stotabs button[aria-selected="true"][data-s="냉동"]{background:var(--cold-soft);color:var(--cold);border-color:transparent}
+  .stotabs button[aria-selected="true"][data-s="냉장"]{background:var(--cool-soft);color:var(--cool);border-color:transparent}
+  .stotabs button[aria-selected="true"][data-s="실온"]{background:var(--room-soft);color:var(--room);border-color:transparent}
+  .invlist{display:flex;flex-direction:column;gap:.4rem}
+  .invitem{background:var(--raised);border:1px solid var(--line);border-radius:11px;padding:.6rem .8rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+  .invitem .n{font-weight:600}
+  .invitem .meta{font-size:.72rem;color:var(--muted);font-family:var(--mono)}
+  .invitem .gone{font:inherit;font-size:.76rem;font-weight:700;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:.25rem .5rem;cursor:pointer}
+  .empty{color:var(--muted);text-align:center;padding:2rem 0;font-size:.9rem}
+
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<header>
+  <div class="head-inner">
+    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.1</small></div>
+    <button class="export" id="exportBtn" type="button">내보내기</button>
+  </div>
+  <div class="head-inner">
+    <div class="tabs" role="tablist" style="flex:1">
+      <button role="tab" aria-selected="true" data-view="input">입력</button>
+      <button role="tab" aria-selected="false" data-view="stock">재고</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- 입력 -->
+  <section class="view" id="view-input">
+    <div class="mic-wrap">
+      <button class="mic" id="mic" type="button" data-on="0" aria-label="녹음">🎤</button>
+      <div class="mic-hint" id="micHint">탭해서 말하기 — 예: “두부 계란 대파 샀어”</div>
+    </div>
+    <div class="textrow">
+      <input id="textin" type="text" placeholder="⌨️ 직접 입력 (음성이 어려울 때)" autocomplete="off">
+      <button id="textgo" type="button">분석</button>
+    </div>
+
+    <div class="banner warn" id="iosNote"></div>
+    <div class="banner err" id="errNote"></div>
+
+    <div class="confirm hidden" id="confirm">
+      <h2><span>확인 — 재료명·보관만 보면 됩니다</span><span class="mode" id="mode"></span></h2>
+      <div class="rows" id="rows"></div>
+      <div class="addrow">
+        <input id="addin" type="text" placeholder="+ 빠진 재료 직접 추가" autocomplete="off">
+        <button id="addgo" type="button">추가</button>
+      </div>
+      <div class="confirm-actions">
+        <button class="btn-primary" id="confirmBtn" type="button">확인</button>
+        <button class="btn-ghost" id="cancelBtn" type="button">취소</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 재고 -->
+  <section class="view hidden" id="view-stock">
+    <div class="stotabs" id="stotabs">
+      <button aria-selected="true" data-s="냉장">냉장</button>
+      <button aria-selected="false" data-s="냉동">냉동</button>
+      <button aria-selected="false" data-s="실온">실온</button>
+    </div>
+    <div class="invlist" id="invlist"></div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ── 재료 마스터 (레시피 20개 + 실측 재고/영수증에서 시딩) ──
+  // storage: 냉동|냉장|실온 (사용자 노출)  ·  mgmt: 신선|상비 (내부 전용)
+  // lunch: 도시락 우선 재료
+  var MASTER = [
+    // 채소
+    {n:"양파",s:"실온",m:"신선",c:"채소"},
+    {n:"대파",s:"냉장",m:"신선",c:"채소",a:["파"]},
+    {n:"쪽파",s:"냉장",m:"신선",c:"채소",a:["실파"]},
+    {n:"부추",s:"냉장",m:"신선",c:"채소"},
+    {n:"가지",s:"냉장",m:"신선",c:"채소"},
+    {n:"애호박",s:"냉장",m:"신선",c:"채소",a:["호박"]},
+    {n:"오이",s:"냉장",m:"신선",c:"채소",a:["가시오이","다대기오이"],lunch:1},
+    {n:"파프리카",s:"냉장",m:"신선",c:"채소",lunch:1},
+    {n:"피망",s:"냉장",m:"신선",c:"채소"},
+    {n:"당근",s:"냉장",m:"신선",c:"채소",a:["흙당근"],lunch:1},
+    {n:"감자",s:"실온",m:"신선",c:"채소"},
+    {n:"양배추",s:"냉장",m:"신선",c:"채소"},
+    {n:"배추",s:"냉장",m:"신선",c:"채소"},
+    {n:"무",s:"냉장",m:"신선",c:"채소"},
+    {n:"청양고추",s:"냉장",m:"신선",c:"채소"},
+    {n:"고추",s:"냉장",m:"신선",c:"채소",a:["풋고추","매운고추"]},
+    {n:"깻잎",s:"냉장",m:"신선",c:"채소"},
+    {n:"얼갈이",s:"냉장",m:"신선",c:"채소"},
+    {n:"청경채",s:"냉장",m:"신선",c:"채소"},
+    {n:"미니로메인",s:"냉장",m:"신선",c:"채소",a:["로메인"],lunch:1},
+    {n:"상추",s:"냉장",m:"신선",c:"채소",lunch:1},
+    {n:"마늘",s:"실온",m:"신선",c:"채소",a:["통마늘"]},
+    {n:"생강",s:"냉장",m:"신선",c:"채소"},
+    // 가공형태 (별도 재료)
+    {n:"다진마늘",s:"냉장",m:"상비",c:"소스·양념",a:["마늘다진것","간마늘","다진 마늘"]},
+    {n:"다진생강",s:"냉장",m:"상비",c:"소스·양념",a:["생강다진것","생강술"]},
+    {n:"고춧가루",s:"실온",m:"상비",c:"소스·양념",a:["고추가루"]},
+    // 수산물
+    {n:"오징어",s:"냉장",m:"신선",c:"수산물",a:["반건조오징어"]},
+    {n:"새우",s:"냉동",m:"신선",c:"수산물",a:["칵테일새우"]},
+    {n:"바지락",s:"냉장",m:"신선",c:"수산물"},
+    {n:"꼬막",s:"냉장",m:"신선",c:"수산물"},
+    {n:"고등어",s:"냉장",m:"신선",c:"수산물"},
+    {n:"명란",s:"냉장",m:"상비",c:"수산물",a:["명란젓","저염명란"]},
+    {n:"멸치",s:"실온",m:"상비",c:"수산물"},
+    {n:"다시마",s:"실온",m:"상비",c:"수산물"},
+    {n:"가츠오부시",s:"실온",m:"상비",c:"수산물",a:["가쓰오부시","다랑어포"]},
+    {n:"진미채",s:"실온",m:"상비",c:"수산물"},
+    {n:"쥐포",s:"실온",m:"상비",c:"수산물",a:["구운쥐포"]},
+    {n:"톳",s:"실온",m:"상비",c:"수산물",a:["건톳"]},
+    {n:"김",s:"실온",m:"상비",c:"수산물"},
+    {n:"어묵",s:"냉장",m:"신선",c:"수산물",a:["오뎅"]},
+    // 육류
+    {n:"돼지고기",s:"냉장",m:"신선",c:"육류",a:["목살","앞다리살","앞다릿살"]},
+    {n:"삼겹살",s:"냉동",m:"신선",c:"육류"},
+    {n:"다진돼지고기",s:"냉장",m:"신선",c:"육류",a:["다진고기","다짐육"]},
+    {n:"소고기",s:"냉장",m:"신선",c:"육류",a:["소고기","쇠고기"]},
+    {n:"닭가슴살",s:"냉장",m:"신선",c:"육류",lunch:1},
+    {n:"스팸",s:"실온",m:"상비",c:"육류",a:["스팸햄"]},
+    {n:"소시지",s:"냉장",m:"상비",c:"육류",a:["프랑크소시지","비엔나"]},
+    {n:"햄",s:"냉장",m:"상비",c:"육류"},
+    {n:"베이컨",s:"냉장",m:"상비",c:"육류"},
+    // 유제품
+    {n:"계란",s:"냉장",m:"상비",c:"유제품",a:["달걀","특란","무항생제란"]},
+    {n:"우유",s:"냉장",m:"상비",c:"유제품"},
+    {n:"버터",s:"냉장",m:"상비",c:"유제품"},
+    {n:"치즈",s:"냉장",m:"상비",c:"유제품",a:["체다치즈","슬라이스치즈"]},
+    // 곡류·면
+    {n:"쌀",s:"실온",m:"상비",c:"곡류·면"},
+    {n:"밀가루",s:"실온",m:"상비",c:"곡류·면"},
+    {n:"부침가루",s:"실온",m:"상비",c:"곡류·면"},
+    {n:"라면",s:"실온",m:"상비",c:"곡류·면",a:["라면사리"]},
+    {n:"우동면",s:"냉장",m:"상비",c:"곡류·면",a:["우동"]},
+    {n:"떡",s:"냉장",m:"신선",c:"곡류·면",a:["떡볶이떡","가래떡"]},
+    // 소스·양념
+    {n:"간장",s:"실온",m:"상비",c:"소스·양념",a:["진간장","국간장"]},
+    {n:"고추장",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"된장",s:"실온",m:"상비",c:"소스·양념",a:["미소된장","미소"]},
+    {n:"설탕",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"소금",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"식초",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"참기름",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"들기름",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"식용유",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"물엿",s:"실온",m:"상비",c:"소스·양념",a:["조청"]},
+    {n:"미림",s:"실온",m:"상비",c:"소스·양념",a:["맛술","정종"]},
+    {n:"굴소스",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"참치액",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"매실청",s:"실온",m:"상비",c:"소스·양념",a:["매실액","매실액기스"]},
+    {n:"후추",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"마요네즈",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"혼다시",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"새우젓",s:"냉장",m:"상비",c:"소스·양념"},
+    {n:"액젓",s:"실온",m:"상비",c:"소스·양념",a:["멸치액젓","꽃게액젓"]},
+    {n:"고추기름",s:"실온",m:"상비",c:"소스·양념"},
+    {n:"청주",s:"실온",m:"상비",c:"소스·양념"},
+    // 김치·절임
+    {n:"김치",s:"냉장",m:"상비",c:"김치·절임",a:["배추김치","포기김치"]},
+    // 과일
+    {n:"사과",s:"냉장",m:"신선",c:"과일"},
+    {n:"방울토마토",s:"냉장",m:"신선",c:"과일",a:["대추방울토마토"],lunch:1},
+    {n:"배",s:"냉장",m:"신선",c:"과일"},
+    // 냉동식품
+    {n:"만두",s:"냉동",m:"신선",c:"냉동식품",a:["군만두","냉동만두"]},
+    // 기타
+    {n:"두부",s:"냉장",m:"신선",c:"기타",a:["행복한콩두부","부침두부"]},
+    {n:"통조림흰콩",s:"실온",m:"상비",c:"기타",a:["흰콩","강낭콩"]},
+    {n:"참치캔",s:"실온",m:"상비",c:"기타",a:["참치"]},
+    {n:"게맛살",s:"냉장",m:"상비",c:"기타"},
+    {n:"크림수프",s:"실온",m:"상비",c:"기타"}
+  ];
+
+  var CATS = ["육류","수산물","채소","과일","유제품","곡류·면","소스·양념","김치·절임","냉동식품","반찬·조리","기타"];
+  var STORAGES = ["냉동","냉장","실온"];
+
+  // ── localStorage 상태 ──
+  var LS_INV="naengbu_inv", LS_EXT="naengbu_masterext";
+  function load(k,d){ try{ return JSON.parse(localStorage.getItem(k))||d; }catch(e){ return d; } }
+  function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+  var inv = load(LS_INV,{});      // {재료명:{status,storage,updated,src}}
+  var ext = load(LS_EXT,[]);      // 사용자가 추가한 신규 재료 (MASTER와 동형)
+
+  function allMaster(){ return MASTER.concat(ext); }
+
+  // 별칭 → 재료 매핑 (surface 길이 desc)
+  function buildSurfaces(){
+    var arr=[];
+    allMaster().forEach(function(it){
+      arr.push({surf:it.n, ing:it});
+      (it.a||[]).forEach(function(al){ arr.push({surf:al, ing:it}); });
+    });
+    arr.sort(function(x,y){ return y.surf.length - x.surf.length; });
+    return arr;
+  }
+  var SURF = buildSurfaces();
+  function findIng(name){
+    var s=name.trim();
+    for(var i=0;i<SURF.length;i++){ if(SURF[i].surf===s) return SURF[i].ing; }
+    return null;
+  }
+
+  // ── 파싱 (규칙기반) ──
+  var SOJI = /(떨어졌|다\s*썼|다\s*떨어|없어졌|다\s*먹었|다\s*씀|바닥)/;
+  function parse(text){
+    var t = (text||"").replace(/[.,!?~]/g," ");
+    var mode = SOJI.test(t) ? "소진" : "입고";
+    var consumed = new Array(t.length);
+    var found=[];
+    SURF.forEach(function(s){
+      var idx=t.indexOf(s.surf);
+      while(idx!==-1){
+        var free=true;
+        for(var i=idx;i<idx+s.surf.length;i++){ if(consumed[i]){free=false;break;} }
+        if(free){
+          for(var j=idx;j<idx+s.surf.length;j++) consumed[j]=true;
+          if(found.indexOf(s.ing)===-1) found.push(s.ing);
+        }
+        idx=t.indexOf(s.surf, idx+1);
+      }
+    });
+    return {mode:mode, items:found};
+  }
+
+  // ── 컨펌 상태 ──
+  var draft=[];    // [{name, storage, cat, mgmt, isNew}]
+  var draftMode="입고";
+
+  function toDraft(name, storage, cat, mgmt, isNew){
+    return {name:name, storage:storage, cat:cat||"기타", mgmt:mgmt||"신선", isNew:!!isNew};
+  }
+
+  function startConfirm(text){
+    var r = parse(text);
+    draftMode = r.mode;
+    draft = r.items.map(function(it){ return toDraft(it.n, it.s, it.c, it.m, false); });
+    if(draft.length===0){
+      showErr("인식된 재료가 없어요. 아래 “빠진 재료 직접 추가”로 넣거나 다시 말해보세요.");
+    } else { hideErr(); }
+    renderConfirm();
+  }
+
+  function addByName(name){
+    name=(name||"").trim(); if(!name) return;
+    if(draft.some(function(d){return d.name===name;})){ toast("이미 있음"); return; }
+    var ing=findIng(name);
+    if(ing){ draft.push(toDraft(ing.n,ing.s,ing.c,ing.m,false)); }
+    else { draft.push(toDraft(name,"냉장","기타","신선",true)); } // 신규: 기본값, 사용자가 조정
+    renderConfirm();
+  }
+
+  // ── 렌더: 컨펌 ──
+  var confirmEl=document.getElementById("confirm");
+  var rowsEl=document.getElementById("rows");
+  var modeEl=document.getElementById("mode");
+  function renderConfirm(){
+    confirmEl.classList.remove("hidden");
+    modeEl.textContent = draftMode==="소진" ? "🗑 소진 — 없음 처리" : "";
+    rowsEl.innerHTML="";
+    draft.forEach(function(d,i){
+      var row=document.createElement("div"); row.className="row";
+      var nm=document.createElement("div"); nm.className="nm";
+      nm.innerHTML = esc(d.name) + (d.isNew?' <span class="new">신규</span>':'');
+      row.appendChild(nm);
+
+      // 보관 세그먼트 (소진 모드에선 숨김 — 없앰만 하면 됨)
+      if(draftMode!=="소진"){
+        var seg=document.createElement("div"); seg.className="seg3";
+        STORAGES.forEach(function(s){
+          var b=document.createElement("button"); b.type="button"; b.dataset.s=s;
+          b.dataset.on = d.storage===s?"1":"0"; b.textContent=s;
+          b.addEventListener("click",function(){ d.storage=s; renderConfirm(); });
+          seg.appendChild(b);
+        });
+        row.appendChild(seg);
+      }
+
+      var del=document.createElement("button"); del.className="del"; del.type="button"; del.innerHTML="✕";
+      del.title="빼기"; del.addEventListener("click",function(){ draft.splice(i,1); renderConfirm(); });
+      row.appendChild(del);
+
+      // 신규 재료: 카테고리 지정 (내부 분류 학습용)
+      if(d.isNew && draftMode!=="소진"){
+        var nc=document.createElement("div"); nc.className="newcat";
+        var lab=document.createElement("label"); lab.textContent="분류";
+        var sel=document.createElement("select");
+        CATS.forEach(function(c){ var o=document.createElement("option"); o.value=c; o.textContent=c; if(c===d.cat)o.selected=true; sel.appendChild(o); });
+        sel.addEventListener("change",function(){ d.cat=sel.value; d.mgmt=guessMgmt(sel.value); });
+        nc.appendChild(lab); nc.appendChild(sel);
+        row.appendChild(nc);
+      }
+      rowsEl.appendChild(row);
+    });
+  }
+  function guessMgmt(cat){
+    return (["소스·양념","유제품","김치·절임","곡류·면"].indexOf(cat)>=0) ? "상비" : "신선";
+  }
+
+  // ── 확인 저장 ──
+  function commit(){
+    if(draft.length===0){ toast("추가된 재료가 없어요"); return; }
+    var now=Date.now();
+    draft.forEach(function(d){
+      if(d.isNew){
+        // 신규 재료를 마스터 확장에 등록 (다음부턴 인식됨)
+        if(!findIng(d.name)){
+          ext.push({n:d.name,s:d.storage,m:d.mgmt,c:d.cat,a:[]});
+        }
+      }
+      if(draftMode==="소진"){
+        inv[d.name]=inv[d.name]||{storage:d.storage};
+        inv[d.name].status="없음"; inv[d.name].updated=now; inv[d.name].src="음성";
+      }else{
+        inv[d.name]={status:"있음",storage:d.storage,updated:now,src:"음성"};
+      }
+    });
+    save(LS_EXT,ext); save(LS_INV,inv);
+    SURF=buildSurfaces();
+    var n=draft.length; draft=[];
+    confirmEl.classList.add("hidden"); rowsEl.innerHTML="";
+    toast(draftMode==="소진"? (n+"개 없음 처리") : (n+"개 담음 ✓"));
+    renderStock();
+  }
+
+  // ── 재고 렌더 ──
+  var curSto="냉장";
+  var invlistEl=document.getElementById("invlist");
+  function renderStock(){
+    var items=Object.keys(inv).filter(function(k){ return inv[k].status==="있음" && inv[k].storage===curSto; });
+    items.sort();
+    invlistEl.innerHTML="";
+    if(items.length===0){ var e=document.createElement("div"); e.className="empty"; e.textContent="아직 없어요. [입력]에서 담아보세요."; invlistEl.appendChild(e); return; }
+    items.forEach(function(k){
+      var it=document.createElement("div"); it.className="invitem";
+      var left=document.createElement("div");
+      left.innerHTML='<div class="n">'+esc(k)+'</div><div class="meta">'+timeAgo(inv[k].updated)+'</div>';
+      var g=document.createElement("button"); g.className="gone"; g.type="button"; g.textContent="없앰";
+      g.addEventListener("click",function(){ inv[k].status="없음"; inv[k].updated=Date.now(); save(LS_INV,inv); renderStock(); toast(k+" 없음"); });
+      it.appendChild(left); it.appendChild(g);
+      invlistEl.appendChild(it);
+    });
+  }
+  function timeAgo(t){ if(!t)return""; var d=Math.floor((Date.now()-t)/86400000); return d<=0?"오늘":d+"일 전"; }
+
+  // ── 탭 전환 ──
+  document.querySelector(".tabs").addEventListener("click",function(e){
+    var b=e.target.closest("button"); if(!b)return;
+    Array.prototype.forEach.call(this.querySelectorAll("button"),function(x){x.setAttribute("aria-selected",x===b?"true":"false");});
+    var v=b.dataset.view;
+    document.getElementById("view-input").classList.toggle("hidden",v!=="input");
+    document.getElementById("view-stock").classList.toggle("hidden",v!=="stock");
+    if(v==="stock") renderStock();
+  });
+  document.getElementById("stotabs").addEventListener("click",function(e){
+    var b=e.target.closest("button"); if(!b)return;
+    Array.prototype.forEach.call(this.querySelectorAll("button"),function(x){x.setAttribute("aria-selected",x===b?"true":"false");});
+    curSto=b.dataset.s; renderStock();
+  });
+
+  // ── 텍스트/추가 입력 ──
+  document.getElementById("textgo").addEventListener("click",function(){ var v=document.getElementById("textin").value; if(v.trim()){ startConfirm(v); document.getElementById("textin").value=""; } });
+  document.getElementById("textin").addEventListener("keydown",function(e){ if(e.key==="Enter") document.getElementById("textgo").click(); });
+  document.getElementById("addgo").addEventListener("click",function(){ var el=document.getElementById("addin"); if(el.value.trim()){ addByName(el.value); el.value=""; } });
+  document.getElementById("addin").addEventListener("keydown",function(e){ if(e.key==="Enter") document.getElementById("addgo").click(); });
+  document.getElementById("confirmBtn").addEventListener("click",commit);
+  document.getElementById("cancelBtn").addEventListener("click",function(){ draft=[]; confirmEl.classList.add("hidden"); rowsEl.innerHTML=""; hideErr(); });
+
+  // ── 음성 (음성테스트에서 검증된 iOS-safe 엔진) ──
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  var activeRec=null, stopActive=null;
+  var mic=document.getElementById("mic"), micHint=document.getElementById("micHint");
+  var isIOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+  if(SR && isIOS){ var n=document.getElementById("iosNote"); n.classList.add("show"); n.innerHTML="아이폰은 <b>Safari</b>에서, 설정 › 일반 › 키보드 › <b>받아쓰기 켜기</b>가 필요해요. 침묵으로 자동종료되니 다 말하면 마이크를 다시 탭해 종료하세요."; }
+  if(!SR){ var e=document.getElementById("errNote"); e.classList.add("show"); e.textContent="이 브라우저는 음성 인식을 지원하지 않아요. 아래 텍스트 입력을 쓰세요."; mic.disabled=true; }
+
+  mic.addEventListener("click",function(){
+    if(activeRec){ if(stopActive) stopActive(); return; }
+    if(!SR) return;
+    var rec=new SR(); rec.lang="ko-KR"; rec.interimResults=true; rec.continuous=true; rec.maxAlternatives=1;
+    var acc="", lastInterim="", done=false;
+    activeRec=rec;
+    function finish(){
+      if(done)return; done=true; activeRec=null; stopActive=null;
+      mic.dataset.on="0"; mic.textContent="🎤";
+      var text=(acc+" "+lastInterim).trim();
+      micHint.textContent = text? '“'+text+'”' : "탭해서 말하기";
+      if(text) startConfirm(text);
+    }
+    stopActive=function(){ mic.dataset.on="0"; mic.textContent="🎤"; try{rec.stop();}catch(e){} setTimeout(function(){try{rec.abort();}catch(e){}},400); setTimeout(finish,1000); };
+    rec.onresult=function(ev){
+      var interim="";
+      for(var i=ev.resultIndex;i<ev.results.length;i++){ var r=ev.results[i]; if(r.isFinal) acc+=r[0].transcript; else interim+=r[0].transcript; }
+      lastInterim=interim; micHint.innerHTML='<b>'+esc((acc+" "+interim).trim())+'</b>';
+    };
+    rec.onerror=function(ev){ if(ev.error==="no-speech"||ev.error==="aborted")return;
+      var e=document.getElementById("errNote"); e.classList.add("show");
+      e.textContent = ev.error==="not-allowed"||ev.error==="service-not-allowed" ? "마이크/받아쓰기 권한을 확인하세요 (설정 › 일반 › 키보드 › 받아쓰기)." : ("오류: "+ev.error);
+    };
+    rec.onend=finish;
+    hideErr(); mic.dataset.on="1"; mic.textContent="⏹"; micHint.textContent="듣는 중… 다 말하면 다시 탭";
+    try{ rec.start(); }catch(e){ finish(); }
+  });
+
+  // ── 내보내기 (마스터 확장 + 재고 → 텍스트) ──
+  document.getElementById("exportBtn").addEventListener("click",function(){
+    var lines=["# 윤봄네 냉장고 — 입력 스냅샷", new Date().toLocaleString("ko-KR"), ""];
+    lines.push("## 사용자가 추가한 신규 재료 ("+ext.length+")  ← 마스터에 반영할 것");
+    if(ext.length===0) lines.push("  (없음)");
+    ext.forEach(function(x){ lines.push("  · "+x.n+" | "+x.s+" | "+x.m+" | "+x.c+(x.a&&x.a.length?" | alias: "+x.a.join(", "):"")); });
+    lines.push("");
+    lines.push("## 현재 재고");
+    STORAGES.forEach(function(s){
+      var has=Object.keys(inv).filter(function(k){return inv[k].status==="있음"&&inv[k].storage===s;}).sort();
+      lines.push("  ["+s+"] "+(has.join(", ")||"-"));
+    });
+    var gone=Object.keys(inv).filter(function(k){return inv[k].status==="없음";}).sort();
+    lines.push("  [없음] "+(gone.join(", ")||"-"));
+    var out=lines.join("\n");
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(out).then(function(){toast("복사됨 ✓");},function(){fb(out);}); }
+    else fb(out);
+    function fb(t){ var ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch(e){} document.body.removeChild(ta); toast("복사됨 ✓"); }
+  });
+
+  // ── 유틸 ──
+  var toastEl=document.getElementById("toast"), toastT=null;
+  function toast(msg){ toastEl.textContent=msg; toastEl.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(function(){toastEl.classList.remove("show");},1600); }
+  function showErr(m){ var e=document.getElementById("errNote"); e.classList.add("show"); e.textContent=m; }
+  function hideErr(){ document.getElementById("errNote").classList.remove("show"); }
+  function esc(s){ return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
+
+  renderStock();
+})();
+</script>
