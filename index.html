@@ -152,7 +152,7 @@
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.3</small></div>
+    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.4</small></div>
     <div style="display:flex;gap:.4rem">
       <button class="export" id="wakeBtn" type="button" aria-pressed="true" title="화면 꺼짐 방지">🔆 화면유지</button>
       <button class="export" id="exportBtn" type="button">내보내기</button>
@@ -244,7 +244,7 @@
     {n:"마늘",s:"실온",m:"신선",c:"채소",a:["통마늘"]},
     {n:"생강",s:"냉장",m:"신선",c:"채소"},
     // 가공형태 (별도 재료)
-    {n:"다진마늘",s:"냉장",m:"상비",c:"소스·양념",a:["마늘다진것","간마늘","다진 마늘"]},
+    {n:"다진마늘",s:"냉동",m:"상비",c:"소스·양념",a:["마늘다진것","간마늘","다진 마늘"]},
     {n:"다진생강",s:"냉장",m:"상비",c:"소스·양념",a:["생강다진것","생강술"]},
     {n:"고춧가루",s:"실온",m:"상비",c:"소스·양념",a:["고추가루"]},
     // 수산물
@@ -254,7 +254,8 @@
     {n:"꼬막",s:"냉장",m:"신선",c:"수산물"},
     {n:"고등어",s:"냉장",m:"신선",c:"수산물"},
     {n:"명란",s:"냉장",m:"상비",c:"수산물",a:["명란젓","저염명란"]},
-    {n:"멸치",s:"실온",m:"상비",c:"수산물"},
+    {n:"국물용멸치",s:"냉동",m:"상비",c:"수산물",a:["다시멸치","국물멸치","멸치","다시용멸치"]},
+    {n:"잔멸치",s:"냉동",m:"상비",c:"수산물",a:["볶음멸치","지리멸","꽈리멸치"]},
     {n:"다시마",s:"실온",m:"상비",c:"수산물"},
     {n:"가츠오부시",s:"실온",m:"상비",c:"수산물",a:["가쓰오부시","다랑어포"]},
     {n:"진미채",s:"실온",m:"상비",c:"수산물"},
@@ -330,9 +331,24 @@
   var LS_INV="naengbu_inv", LS_EXT="naengbu_masterext", LS_SESS="naengbu_session";
   function load(k,d){ try{ return JSON.parse(localStorage.getItem(k))||d; }catch(e){ return d; } }
   function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
-  var inv = load(LS_INV,{});      // {재료명:{status,storage,updated,src}}
+  // inv[재료명] = { "냉동":{status,updated,src}, "냉장":{...}, "실온":{...} }
+  // 한 재료가 여러 칸에 동시 존재 가능 (예: 대파 실온+냉동). 추천은 어느 칸이든 '있음'이면 됨.
+  var inv = load(LS_INV,{});
   var ext = load(LS_EXT,[]);      // 사용자가 추가한 신규 재료 (MASTER와 동형)
   var session = load(LS_SESS,[]); // 이번 세션에 담은 것 (연속성 피드)
+
+  // 구버전(재료당 보관 1개) → 신버전(칸별 버킷) 마이그레이션
+  (function migrate(){
+    var changed=false;
+    Object.keys(inv).forEach(function(k){
+      var v=inv[k];
+      if(v && typeof v.status==="string" && typeof v.storage==="string"){
+        var b={}; b[v.storage]={status:v.status,updated:v.updated,src:v.src};
+        inv[k]=b; changed=true;
+      }
+    });
+    if(changed) save(LS_INV,inv);
+  })();
 
   function allMaster(){ return MASTER.concat(ext); }
 
@@ -490,10 +506,11 @@
         }
       }
       if(draftMode==="소진"){
-        inv[d.name]=inv[d.name]||{storage:d.storage};
-        inv[d.name].status="없음"; inv[d.name].updated=now; inv[d.name].src="음성";
+        if(inv[d.name]){ Object.keys(inv[d.name]).forEach(function(st){ inv[d.name][st].status="없음"; inv[d.name][st].updated=now; }); }
+        else { inv[d.name]={}; inv[d.name][d.storage]={status:"없음",updated:now,src:"음성"}; }
       }else{
-        inv[d.name]={status:"있음",storage:d.storage,updated:now,src:"음성"};
+        inv[d.name]=inv[d.name]||{};
+        inv[d.name][d.storage]={status:"있음",updated:now,src:"음성"};
       }
     });
     draft.forEach(function(d){ session.push({name:d.name,storage:d.storage,mode:draftMode}); });
@@ -510,16 +527,18 @@
   var curSto="냉장";
   var invlistEl=document.getElementById("invlist");
   function renderStock(){
-    var items=Object.keys(inv).filter(function(k){ return inv[k].status==="있음" && inv[k].storage===curSto; });
+    var items=Object.keys(inv).filter(function(k){ return inv[k][curSto] && inv[k][curSto].status==="있음"; });
     items.sort();
     invlistEl.innerHTML="";
     if(items.length===0){ var e=document.createElement("div"); e.className="empty"; e.textContent="아직 없어요. [입력]에서 담아보세요."; invlistEl.appendChild(e); return; }
     items.forEach(function(k){
       var it=document.createElement("div"); it.className="invitem";
+      var elsewhere=STORAGES.filter(function(s){ return s!==curSto && inv[k][s] && inv[k][s].status==="있음"; });
+      var also = elsewhere.length? ' · 또: '+elsewhere.join("/") : '';
       var left=document.createElement("div");
-      left.innerHTML='<div class="n">'+esc(k)+'</div><div class="meta">'+timeAgo(inv[k].updated)+'</div>';
+      left.innerHTML='<div class="n">'+esc(k)+'</div><div class="meta">'+timeAgo(inv[k][curSto].updated)+esc(also)+'</div>';
       var g=document.createElement("button"); g.className="gone"; g.type="button"; g.textContent="없앰";
-      g.addEventListener("click",function(){ inv[k].status="없음"; inv[k].updated=Date.now(); save(LS_INV,inv); renderStock(); toast(k+" 없음"); });
+      g.addEventListener("click",function(){ inv[k][curSto].status="없음"; inv[k][curSto].updated=Date.now(); save(LS_INV,inv); renderStock(); toast(k+" ("+curSto+") 없음"); });
       it.appendChild(left); it.appendChild(g);
       invlistEl.appendChild(it);
     });
@@ -595,10 +614,14 @@
     lines.push("");
     lines.push("## 현재 재고");
     STORAGES.forEach(function(s){
-      var has=Object.keys(inv).filter(function(k){return inv[k].status==="있음"&&inv[k].storage===s;}).sort();
+      var has=Object.keys(inv).filter(function(k){return inv[k][s]&&inv[k][s].status==="있음";}).sort();
       lines.push("  ["+s+"] "+(has.join(", ")||"-"));
     });
-    var gone=Object.keys(inv).filter(function(k){return inv[k].status==="없음";}).sort();
+    var gone=Object.keys(inv).filter(function(k){
+      var b=inv[k]; var any있=false, any없=false;
+      STORAGES.forEach(function(s){ if(b[s]){ if(b[s].status==="있음")any있=true; else any없=true; } });
+      return any없 && !any있;
+    }).sort();
     lines.push("  [없음] "+(gone.join(", ")||"-"));
     var out=lines.join("\n");
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(out).then(function(){toast("복사됨 ✓");},function(){fb(out);}); }
