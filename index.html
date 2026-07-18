@@ -1,4 +1,4 @@
-<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.11 (2026-07-18)
+<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.12 (2026-07-18)
      자체완결 웹앱 · Web Speech(ko-KR) + 규칙기반 재료 매칭 + localStorage
      목적: 냉장고 재료를 실제로 입력하며 재료 마스터·alias를 실측으로 다듬는다.
      v0.9: Supabase 배선 — 로컬 우선 + 공유 냉장고 동기화(둘이 냉장고 하나). PostgREST fetch, 라이브러리 무의존. -->
@@ -164,12 +164,36 @@
   .recipe-detail pre{white-space:pre-wrap;word-break:break-word;font-family:var(--sans);font-size:1.06rem;line-height:1.7;background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:1rem;margin:0}
   .recipe-detail .rurl{display:inline-block;margin-top:.8rem;font-size:.86rem;color:var(--cold);text-decoration:underline}
 
+  /* 추천 */
+  .rec-intro{text-align:center;padding:1.2rem 0 .4rem}
+  .rec-go{font:inherit;font-weight:800;font-size:1.05rem;padding:.85rem 1.4rem;border:0;border-radius:12px;background:var(--accent);color:#fff;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  :root[data-theme="dark"] .rec-go{color:#0d1114}
+  @media(prefers-color-scheme:dark){.rec-go{color:#0d1114}}
+  .rec-go:disabled{opacity:.55}
+  .rec-sub{font-size:.82rem;color:var(--muted);margin-top:.6rem;min-height:1.2rem}
+  .rec-cards{display:flex;flex-direction:column;gap:.7rem;margin-top:.4rem}
+  .rcard{background:var(--raised);border:1px solid var(--line);border-radius:14px;padding:.9rem 1rem}
+  .rcard.accepted{border-color:var(--accent)}
+  .rcard.gone{opacity:.4}
+  .rc-type{font-size:.66rem;font-weight:800;letter-spacing:.04em;color:var(--accent);background:var(--accent-soft);padding:.14rem .5rem;border-radius:999px}
+  .rcard h3{font-size:1.25rem;margin:.45rem 0 .5rem;letter-spacing:-.01em}
+  .rc-buy{font-size:.92rem;margin:.2rem 0}
+  .rc-buy b{color:var(--rec)}
+  .rc-buy.none{color:var(--muted)}
+  .rc-side{font-size:.8rem;color:var(--muted);margin:.2rem 0}
+  .rc-actions{display:flex;gap:.5rem;margin-top:.75rem}
+  .rc-accept{flex:1;font:inherit;font-weight:800;font-size:.95rem;padding:.6rem;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
+  :root[data-theme="dark"] .rc-accept{color:#0d1114}
+  @media(prefers-color-scheme:dark){.rc-accept{color:#0d1114}}
+  .rc-reject{font:inherit;font-weight:700;font-size:.9rem;padding:.6rem 1.1rem;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--muted);cursor:pointer}
+  .rc-recipe{margin-top:.7rem;white-space:pre-wrap;word-break:break-word;font-size:1.02rem;line-height:1.65;background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:.85rem}
+
   :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.11</small></div>
+    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.12</small></div>
     <div style="display:flex;gap:.4rem">
       <span id="syncDot" title="공유 동기화 상태" style="align-self:center;font-size:.72rem;font-weight:700;color:var(--muted)">☁︎…</span>
       <button class="export" id="wakeBtn" type="button" aria-pressed="true" title="화면 꺼짐 방지">🔆 화면유지</button>
@@ -181,6 +205,7 @@
       <button role="tab" aria-selected="true" data-view="input">입력</button>
       <button role="tab" aria-selected="false" data-view="stock">재고</button>
       <button role="tab" aria-selected="false" data-view="recipe">레시피</button>
+      <button role="tab" aria-selected="false" data-view="recommend">추천</button>
     </div>
   </div>
 </header>
@@ -232,6 +257,15 @@
     <div class="rec-cats" id="recCats"></div>
     <div class="menu-list" id="menuList"><div class="empty">불러오는 중…</div></div>
     <div class="recipe-detail hidden" id="recipeDetail"></div>
+  </section>
+
+  <!-- 추천 -->
+  <section class="view hidden" id="view-recommend">
+    <div class="rec-intro" id="recIntro">
+      <button class="rec-go" id="recGo" type="button">🍚 오늘 저녁 추천 받기</button>
+      <div class="rec-sub" id="recSub">냉장고 재고 + 우리집 레시피로 한 상 7개를 골라줘요 (약 30초)</div>
+    </div>
+    <div class="rec-cards" id="recCards"></div>
   </section>
 </div>
 
@@ -785,6 +819,82 @@
     window.scrollTo(0,0);
   }
 
+  // ── 추천 (Vercel 함수 → Claude) ──
+  var REC_URL="https://naengbu-api.vercel.app/api/recommend";
+  var LS_REC="naengbu_rec";
+  function recToday(){ return new Date().toLocaleDateString("en-CA"); } // YYYY-MM-DD(로컬)
+  function loadRecCache(){
+    var c=load(LS_REC,null);
+    if(c && c.date===recToday() && c.cards && c.cards.length){
+      document.getElementById("recGo").textContent="🔄 다시 추천";
+      document.getElementById("recSub").textContent="오늘 받은 추천이에요 (다시 받으려면 위 버튼)";
+      renderRecCards(c.cards, c.status||{});
+    }
+  }
+  function fetchRec(){
+    var go=document.getElementById("recGo"), sub=document.getElementById("recSub");
+    go.disabled=true; sub.textContent="Claude가 한 상 고르는 중… (약 30초)"; acquireWake();
+    fetch(REC_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        go.disabled=false;
+        if(j.error){ sub.textContent="추천 실패: "+j.error; return; }
+        if(j.refused){ sub.textContent="추천을 만들지 못했어요. 다시 시도해보세요."; return; }
+        var cards=j.cards||[];
+        if(!cards.length){ sub.textContent="추천이 비어서 왔어요. 다시 시도해보세요."; return; }
+        save(LS_REC,{date:recToday(),cards:cards,status:{}});
+        go.textContent="🔄 다시 추천"; sub.textContent="오늘 추천 "+cards.length+"개 — 마음에 드는 걸 골라요";
+        renderRecCards(cards,{});
+      })
+      .catch(function(e){ go.disabled=false; sub.textContent="네트워크 오류: "+e.message; });
+  }
+  function saveRecStatus(idx,st){ var c=load(LS_REC,null); if(!c)return; c.status=c.status||{}; c.status[idx]=st; save(LS_REC,c); }
+  function renderRecCards(cards,status){
+    var el=document.getElementById("recCards"); el.innerHTML="";
+    cards.forEach(function(c,idx){
+      var st=status[idx];
+      var card=document.createElement("div"); card.className="rcard"+(st==="거절"?" gone":"")+(st==="수락"?" accepted":"");
+      var buy=(c.사올것&&c.사올것.length)
+        ? '<div class="rc-buy">🛒 <b>사올 것:</b> '+esc(c.사올것.join(", "))+'</div>'
+        : '<div class="rc-buy none">🛒 살 것 없음 — 냉장고로 충분</div>';
+      var side=(c.반찬&&c.반찬.length)?'<div class="rc-side">곁들임: '+esc(c.반찬.join(" · "))+'</div>':'';
+      card.innerHTML='<span class="rc-type">'+esc(c.형태)+'</span><h3>'+esc(c.이름)+'</h3>'+buy+side;
+      if(st==="수락"){ appendRecRecipe(card,c); }
+      else if(st!=="거절"){
+        var acts=document.createElement("div"); acts.className="rc-actions";
+        var acc=document.createElement("button"); acc.className="rc-accept"; acc.type="button"; acc.textContent="이걸로 ✓";
+        acc.addEventListener("click",function(){ acceptRec(c,idx,card); });
+        var rej=document.createElement("button"); rej.className="rc-reject"; rej.type="button"; rej.textContent="패스";
+        rej.addEventListener("click",function(){ saveRecStatus(idx,"거절"); card.classList.add("gone"); acts.remove(); });
+        acts.appendChild(acc); acts.appendChild(rej); card.appendChild(acts);
+      }
+      el.appendChild(card);
+    });
+  }
+  function appendRecRecipe(card,c){
+    if(card.querySelector(".rc-recipe")) return;
+    var rec=document.createElement("div"); rec.className="rc-recipe"; rec.textContent=(c.레시피||[]).join("\n")||"(레시피 없음)";
+    card.appendChild(rec);
+  }
+  function acceptRec(c,idx,card){
+    saveRecStatus(idx,"수락"); card.classList.add("accepted");
+    var acts=card.querySelector(".rc-actions"); if(acts) acts.remove();
+    appendRecRecipe(card,c);
+    // 차감: '쓰는재고' 중 신선재료를 없음 처리 (상비는 안 깎음 — v8 §2)
+    var used=[];
+    (c.쓰는재고||[]).forEach(function(nm){
+      var ing=findIng(nm);
+      if(ing && ing.m==="신선" && inv[nm]){
+        Object.keys(inv[nm]).forEach(function(sT){ if(inv[nm][sT].status==="있음"){ inv[nm][sT].status="없음"; inv[nm][sT].updated=Date.now(); } });
+        used.push(nm);
+      }
+    });
+    if(used.length){ save(LS_INV,inv); syncWrite(used); renderStock(); }
+    toast("'"+c.이름+"' 선택 ✓"+(used.length?" · "+used.length+"개 차감":""));
+    window.scrollTo({top:card.offsetTop-70,behavior:"smooth"});
+  }
+  document.getElementById("recGo").addEventListener("click",fetchRec);
+
   // ── 탭 전환 ──
   document.querySelector(".tabs").addEventListener("click",function(e){
     var b=e.target.closest("button"); if(!b)return;
@@ -794,6 +904,7 @@
     var show=document.getElementById("view-"+v); if(show) show.classList.remove("hidden");
     if(v==="stock") renderStock();
     if(v==="recipe") loadMenus();
+    if(v==="recommend") loadRecCache();
   });
   document.getElementById("stotabs").addEventListener("click",function(e){
     var b=e.target.closest("button"); if(!b)return;
