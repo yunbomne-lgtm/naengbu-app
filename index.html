@@ -1,4 +1,4 @@
-<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.10 (2026-07-18)
+<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.11 (2026-07-18)
      자체완결 웹앱 · Web Speech(ko-KR) + 규칙기반 재료 매칭 + localStorage
      목적: 냉장고 재료를 실제로 입력하며 재료 마스터·alias를 실측으로 다듬는다.
      v0.9: Supabase 배선 — 로컬 우선 + 공유 냉장고 동기화(둘이 냉장고 하나). PostgREST fetch, 라이브러리 무의존. -->
@@ -71,7 +71,7 @@
   .sess-chip[data-s="실온"]{background:var(--room-soft);color:var(--room)}
   .sess-chip.gone{background:var(--line-soft);color:var(--muted);text-decoration:line-through}
 
-  .tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--line-soft);padding:4px;border-radius:11px;margin-top:.55rem}
+  .tabs{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;background:var(--line-soft);padding:4px;border-radius:11px;margin-top:.55rem}
   .tabs button{font:inherit;font-size:.9rem;font-weight:650;padding:.5rem;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
   .tabs button[aria-selected="true"]{background:var(--raised);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 
@@ -148,12 +148,28 @@
   .invitem .gone{font:inherit;font-size:.76rem;font-weight:700;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:.25rem .5rem;cursor:pointer}
   .empty{color:var(--muted);text-align:center;padding:2rem 0;font-size:.9rem}
 
+  /* 레시피 */
+  .rec-cats{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.8rem}
+  .rec-cats button{font:inherit;font-size:.82rem;font-weight:700;padding:.4rem .8rem;border-radius:999px;border:1px solid var(--line);background:var(--raised);color:var(--muted);cursor:pointer}
+  .rec-cats button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+  .menu-list{display:flex;flex-direction:column;gap:.4rem}
+  .menu-item{background:var(--raised);border:1px solid var(--line);border-radius:11px;padding:.7rem .85rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;font:inherit;width:100%;text-align:left;-webkit-tap-highlight-color:transparent}
+  .menu-item .mn{font-weight:650;font-size:1rem}
+  .menu-item .mc{font-size:.72rem;color:var(--muted);margin-left:.35rem}
+  .menu-item .arw{color:var(--muted);font-size:1.2rem;line-height:1}
+  /* 레시피 상세 — 부엌에서 폰 세워두고 보기 (글자 크게) */
+  .recipe-detail .rback{font:inherit;font-size:.86rem;font-weight:700;color:var(--accent);background:none;border:0;cursor:pointer;padding:.2rem 0;margin-bottom:.4rem}
+  .recipe-detail h2{font-size:1.5rem;margin:.1rem 0 .15rem;letter-spacing:-.01em}
+  .recipe-detail .rmeta{font-size:.8rem;color:var(--muted);margin-bottom:.9rem}
+  .recipe-detail pre{white-space:pre-wrap;word-break:break-word;font-family:var(--sans);font-size:1.06rem;line-height:1.7;background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:1rem;margin:0}
+  .recipe-detail .rurl{display:inline-block;margin-top:.8rem;font-size:.86rem;color:var(--cold);text-decoration:underline}
+
   :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.10</small></div>
+    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.11</small></div>
     <div style="display:flex;gap:.4rem">
       <span id="syncDot" title="공유 동기화 상태" style="align-self:center;font-size:.72rem;font-weight:700;color:var(--muted)">☁︎…</span>
       <button class="export" id="wakeBtn" type="button" aria-pressed="true" title="화면 꺼짐 방지">🔆 화면유지</button>
@@ -164,6 +180,7 @@
     <div class="tabs" role="tablist" style="flex:1">
       <button role="tab" aria-selected="true" data-view="input">입력</button>
       <button role="tab" aria-selected="false" data-view="stock">재고</button>
+      <button role="tab" aria-selected="false" data-view="recipe">레시피</button>
     </div>
   </div>
 </header>
@@ -208,6 +225,13 @@
       <button aria-selected="false" data-s="실온">실온</button>
     </div>
     <div class="invlist" id="invlist"></div>
+  </section>
+
+  <!-- 레시피 -->
+  <section class="view hidden" id="view-recipe">
+    <div class="rec-cats" id="recCats"></div>
+    <div class="menu-list" id="menuList"><div class="empty">불러오는 중…</div></div>
+    <div class="recipe-detail hidden" id="recipeDetail"></div>
   </section>
 </div>
 
@@ -722,14 +746,54 @@
   }
   function timeAgo(t){ if(!t)return""; var d=Math.floor((Date.now()-t)/86400000); return d<=0?"오늘":d+"일 전"; }
 
+  // ── 레시피 (menus) ──
+  var menusCache=null, recCat="전체";
+  function loadMenus(){
+    if(menusCache){ renderMenus(); return; }
+    sbFetch("GET","/menus?household_id=eq."+SB_HH+"&select=name,category,base_servings,recipe_text,recipe_url&order=category,name")
+      .then(function(rows){ menusCache=rows||[]; renderMenus(); })
+      .catch(function(){ document.getElementById("menuList").innerHTML='<div class="empty">레시피를 불러오지 못했어요. 연결을 확인하세요.</div>'; });
+  }
+  function renderMenus(){
+    var listEl=document.getElementById("menuList"), catsEl=document.getElementById("recCats"), detEl=document.getElementById("recipeDetail");
+    detEl.classList.add("hidden"); listEl.classList.remove("hidden"); catsEl.classList.remove("hidden");
+    if(!menusCache || !menusCache.length){ listEl.innerHTML='<div class="empty">아직 레시피가 없어요.</div>'; catsEl.innerHTML=""; return; }
+    var cats=["전체"]; menusCache.forEach(function(m){ if(cats.indexOf(m.category)<0) cats.push(m.category); });
+    catsEl.innerHTML="";
+    cats.forEach(function(c){
+      var b=document.createElement("button"); b.type="button"; b.textContent=c; b.setAttribute("aria-selected", c===recCat?"true":"false");
+      b.addEventListener("click",function(){ recCat=c; renderMenus(); });
+      catsEl.appendChild(b);
+    });
+    var items=menusCache.filter(function(m){ return recCat==="전체"||m.category===recCat; });
+    listEl.innerHTML="";
+    items.forEach(function(m){
+      var b=document.createElement("button"); b.className="menu-item"; b.type="button";
+      b.innerHTML='<span><span class="mn">'+esc(m.name)+'</span><span class="mc">'+esc(m.category)+(m.base_servings?" · "+esc(m.base_servings):"")+'</span></span><span class="arw">›</span>';
+      b.addEventListener("click",function(){ showRecipe(m); });
+      listEl.appendChild(b);
+    });
+  }
+  function showRecipe(m){
+    var listEl=document.getElementById("menuList"), catsEl=document.getElementById("recCats"), detEl=document.getElementById("recipeDetail");
+    listEl.classList.add("hidden"); catsEl.classList.add("hidden"); detEl.classList.remove("hidden");
+    var url = m.recipe_url ? '<a class="rurl" href="'+esc(m.recipe_url)+'" target="_blank" rel="noopener">원문 보기 ↗</a>' : '';
+    detEl.innerHTML='<button class="rback" type="button" id="rback">‹ 목록</button>'+
+      '<h2>'+esc(m.name)+'</h2><div class="rmeta">'+esc(m.category)+(m.base_servings?" · "+esc(m.base_servings):"")+'</div>'+
+      '<pre>'+esc(m.recipe_text||"(레시피 본문 없음)")+'</pre>'+url;
+    document.getElementById("rback").addEventListener("click",renderMenus);
+    window.scrollTo(0,0);
+  }
+
   // ── 탭 전환 ──
   document.querySelector(".tabs").addEventListener("click",function(e){
     var b=e.target.closest("button"); if(!b)return;
     Array.prototype.forEach.call(this.querySelectorAll("button"),function(x){x.setAttribute("aria-selected",x===b?"true":"false");});
     var v=b.dataset.view;
-    document.getElementById("view-input").classList.toggle("hidden",v!=="input");
-    document.getElementById("view-stock").classList.toggle("hidden",v!=="stock");
+    Array.prototype.forEach.call(document.querySelectorAll(".wrap > .view"),function(sec){ sec.classList.add("hidden"); });
+    var show=document.getElementById("view-"+v); if(show) show.classList.remove("hidden");
     if(v==="stock") renderStock();
+    if(v==="recipe") loadMenus();
   });
   document.getElementById("stotabs").addEventListener("click",function(e){
     var b=e.target.closest("button"); if(!b)return;
