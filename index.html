@@ -1,4 +1,4 @@
-<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.14 (2026-07-18)
+<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.15 (2026-07-18)
      자체완결 웹앱 · Web Speech(ko-KR) + 규칙기반 재료 매칭 + localStorage
      목적: 냉장고 재료를 실제로 입력하며 재료 마스터·alias를 실측으로 다듬는다.
      v0.9: Supabase 배선 — 로컬 우선 + 공유 냉장고 동기화(둘이 냉장고 하나). PostgREST fetch, 라이브러리 무의존. -->
@@ -216,7 +216,7 @@
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.14</small></div>
+    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.15</small></div>
     <div style="display:flex;gap:.4rem">
       <span id="syncDot" title="공유 동기화 상태" style="align-self:center;font-size:.72rem;font-weight:700;color:var(--muted)">☁︎…</span>
       <button class="export" id="wakeBtn" type="button" aria-pressed="true" title="화면 꺼짐 방지">🔆 화면유지</button>
@@ -309,7 +309,7 @@
   <section class="view" id="view-recommend">
     <div class="rec-intro" id="recIntro">
       <button class="rec-go" id="recGo" type="button">🍚 오늘 저녁 추천 받기</button>
-      <div class="rec-sub" id="recSub">냉장고 재고 + 우리집 레시피로 한 상 7개를 골라줘요 (약 30초)</div>
+      <div class="rec-sub" id="recSub">냉장고 재고 + 우리집 레시피로 한 상 3개를 골라줘요 (약 30초)</div>
     </div>
     <div class="rec-cards" id="recCards"></div>
   </section>
