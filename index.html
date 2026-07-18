@@ -152,7 +152,7 @@
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.6</small></div>
+    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.7</small></div>
     <div style="display:flex;gap:.4rem">
       <button class="export" id="wakeBtn" type="button" aria-pressed="true" title="화면 꺼짐 방지">🔆 화면유지</button>
       <button class="export" id="exportBtn" type="button">내보내기</button>
@@ -278,7 +278,9 @@
     {n:"계란",s:"냉장",m:"상비",c:"유제품",a:["달걀","특란","무항생제란"]},
     {n:"우유",s:"냉장",m:"상비",c:"유제품"},
     {n:"버터",s:"냉장",m:"상비",c:"유제품"},
-    {n:"치즈",s:"냉장",m:"상비",c:"유제품",a:["체다치즈","슬라이스치즈"]},
+    {n:"슈레드치즈",s:"냉장",m:"상비",c:"유제품",a:["모짜렐라","모짜렐라치즈","모차렐라","피자치즈","슈레드","치즈"]},
+    {n:"체다치즈",s:"냉장",m:"상비",c:"유제품",a:["슬라이스치즈","슬라이스","체다"]},
+    {n:"크림치즈",s:"냉장",m:"상비",c:"유제품"},
     // 곡류·면
     {n:"쌀",s:"실온",m:"상비",c:"곡류·면"},
     {n:"밀가루",s:"실온",m:"상비",c:"곡류·면"},
@@ -346,6 +348,18 @@
         var b={}; b[v.storage]={status:v.status,updated:v.updated,src:v.src};
         inv[k]=b; changed=true;
       }
+    });
+    if(changed) save(LS_INV,inv);
+  })();
+
+  // 마스터 재료 분리(멸치→국물용멸치, 치즈→슈레드치즈)에 따른 기존 재고 키 이관
+  (function renameInv(){
+    var R={"멸치":"국물용멸치","치즈":"슈레드치즈"};
+    var changed=false;
+    Object.keys(R).forEach(function(o){
+      if(inv[o]){ var nn=R[o]; inv[nn]=inv[nn]||{};
+        Object.keys(inv[o]).forEach(function(st){ if(!inv[nn][st]) inv[nn][st]=inv[o][st]; });
+        delete inv[o]; changed=true; }
     });
     if(changed) save(LS_INV,inv);
   })();
