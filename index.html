@@ -89,6 +89,9 @@
   .confirm{margin-top:1.1rem}
   .confirm h2{font-size:.76rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 .5rem;display:flex;justify-content:space-between}
   .confirm h2 .mode{color:var(--rec)}
+  .batchbar{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;background:var(--accent-soft);border-radius:11px;padding:.55rem .7rem;margin-bottom:.6rem}
+  .batchbar .lab{font-size:.8rem;font-weight:700;color:var(--accent)}
+  .batchbar .seg3{background:var(--raised)}
   .rows{display:flex;flex-direction:column;gap:.5rem}
   .row{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:.6rem .7rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
   .row .nm{font-weight:650;font-size:1rem;flex:1;min-width:5rem}
@@ -135,7 +138,7 @@
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.1</small></div>
+    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.2</small></div>
     <button class="export" id="exportBtn" type="button">내보내기</button>
   </div>
   <div class="head-inner">
@@ -163,6 +166,7 @@
 
     <div class="confirm hidden" id="confirm">
       <h2><span>확인 — 재료명·보관만 보면 됩니다</span><span class="mode" id="mode"></span></h2>
+      <div class="batchbar hidden" id="batchbar"></div>
       <div class="rows" id="rows"></div>
       <div class="addrow">
         <input id="addin" type="text" placeholder="+ 빠진 재료 직접 추가" autocomplete="off">
@@ -239,6 +243,7 @@
     {n:"톳",s:"실온",m:"상비",c:"수산물",a:["건톳"]},
     {n:"김",s:"실온",m:"상비",c:"수산물"},
     {n:"어묵",s:"냉장",m:"신선",c:"수산물",a:["오뎅"]},
+    {n:"황태채",s:"냉동",m:"상비",c:"수산물",a:["황태","북어채"]},
     // 육류
     {n:"돼지고기",s:"냉장",m:"신선",c:"육류",a:["목살","앞다리살","앞다릿살"]},
     {n:"삼겹살",s:"냉동",m:"신선",c:"육류"},
@@ -330,9 +335,16 @@
 
   // ── 파싱 (규칙기반) ──
   var SOJI = /(떨어졌|다\s*썼|다\s*떨어|없어졌|다\s*먹었|다\s*씀|바닥)/;
+  function detectStorage(t){
+    if(/냉동/.test(t)) return "냉동";
+    if(/냉장/.test(t)) return "냉장";
+    if(/실온|상온|팬트리|찬장/.test(t)) return "실온";
+    return null;
+  }
   function parse(text){
     var t = (text||"").replace(/[.,!?~]/g," ");
     var mode = SOJI.test(t) ? "소진" : "입고";
+    var batch = detectStorage(t);
     var consumed = new Array(t.length);
     var found=[];
     SURF.forEach(function(s){
@@ -347,12 +359,15 @@
         idx=t.indexOf(s.surf, idx+1);
       }
     });
-    return {mode:mode, items:found};
+    return {mode:mode, items:found, batch:batch};
   }
 
   // ── 컨펌 상태 ──
   var draft=[];    // [{name, storage, cat, mgmt, isNew}]
   var draftMode="입고";
+  var draftBatch=null;  // 칸 단위 보관 (냉동/냉장/실온) — 지정 시 전체 적용
+
+  function setBatch(s){ draftBatch=s; draft.forEach(function(d){ d.storage=s; }); renderConfirm(); }
 
   function toDraft(name, storage, cat, mgmt, isNew){
     return {name:name, storage:storage, cat:cat||"기타", mgmt:mgmt||"신선", isNew:!!isNew};
@@ -361,7 +376,8 @@
   function startConfirm(text){
     var r = parse(text);
     draftMode = r.mode;
-    draft = r.items.map(function(it){ return toDraft(it.n, it.s, it.c, it.m, false); });
+    draftBatch = r.batch;  // 발화에 "냉동실에" 등이 있으면 칸 보관 자동
+    draft = r.items.map(function(it){ return toDraft(it.n, r.batch||it.s, it.c, it.m, false); });
     if(draft.length===0){
       showErr("인식된 재료가 없어요. 아래 “빠진 재료 직접 추가”로 넣거나 다시 말해보세요.");
     } else { hideErr(); }
@@ -372,8 +388,8 @@
     name=(name||"").trim(); if(!name) return;
     if(draft.some(function(d){return d.name===name;})){ toast("이미 있음"); return; }
     var ing=findIng(name);
-    if(ing){ draft.push(toDraft(ing.n,ing.s,ing.c,ing.m,false)); }
-    else { draft.push(toDraft(name,"냉장","기타","신선",true)); } // 신규: 기본값, 사용자가 조정
+    if(ing){ draft.push(toDraft(ing.n, draftBatch||ing.s, ing.c, ing.m, false)); }
+    else { draft.push(toDraft(name, draftBatch||"냉장", "기타", "신선", true)); } // 신규: 기본값, 사용자가 조정
     renderConfirm();
   }
 
@@ -381,9 +397,27 @@
   var confirmEl=document.getElementById("confirm");
   var rowsEl=document.getElementById("rows");
   var modeEl=document.getElementById("mode");
+  var batchEl=document.getElementById("batchbar");
   function renderConfirm(){
     confirmEl.classList.remove("hidden");
     modeEl.textContent = draftMode==="소진" ? "🗑 소진 — 없음 처리" : "";
+
+    // 칸 단위 보관 (냉동실 한 칸 통째로 입력할 때 6번 탭 → 1번)
+    batchEl.innerHTML="";
+    if(draftMode!=="소진" && draft.length>0){
+      batchEl.classList.remove("hidden");
+      var lab=document.createElement("span"); lab.className="lab"; lab.textContent="이 칸 전체";
+      batchEl.appendChild(lab);
+      var seg=document.createElement("div"); seg.className="seg3";
+      STORAGES.forEach(function(s){
+        var b=document.createElement("button"); b.type="button"; b.dataset.s=s;
+        b.dataset.on = draftBatch===s?"1":"0"; b.textContent=s;
+        b.addEventListener("click",function(){ setBatch(s); });
+        seg.appendChild(b);
+      });
+      batchEl.appendChild(seg);
+    } else { batchEl.classList.add("hidden"); }
+
     rowsEl.innerHTML="";
     draft.forEach(function(d,i){
       var row=document.createElement("div"); row.className="row";
@@ -397,7 +431,7 @@
         STORAGES.forEach(function(s){
           var b=document.createElement("button"); b.type="button"; b.dataset.s=s;
           b.dataset.on = d.storage===s?"1":"0"; b.textContent=s;
-          b.addEventListener("click",function(){ d.storage=s; renderConfirm(); });
+          b.addEventListener("click",function(){ d.storage=s; draftBatch=null; renderConfirm(); });
           seg.appendChild(b);
         });
         row.appendChild(seg);
@@ -444,8 +478,8 @@
     });
     save(LS_EXT,ext); save(LS_INV,inv);
     SURF=buildSurfaces();
-    var n=draft.length; draft=[];
-    confirmEl.classList.add("hidden"); rowsEl.innerHTML="";
+    var n=draft.length; draft=[]; draftBatch=null;
+    confirmEl.classList.add("hidden"); rowsEl.innerHTML=""; batchEl.classList.add("hidden");
     toast(draftMode==="소진"? (n+"개 없음 처리") : (n+"개 담음 ✓"));
     renderStock();
   }
@@ -491,7 +525,7 @@
   document.getElementById("addgo").addEventListener("click",function(){ var el=document.getElementById("addin"); if(el.value.trim()){ addByName(el.value); el.value=""; } });
   document.getElementById("addin").addEventListener("keydown",function(e){ if(e.key==="Enter") document.getElementById("addgo").click(); });
   document.getElementById("confirmBtn").addEventListener("click",commit);
-  document.getElementById("cancelBtn").addEventListener("click",function(){ draft=[]; confirmEl.classList.add("hidden"); rowsEl.innerHTML=""; hideErr(); });
+  document.getElementById("cancelBtn").addEventListener("click",function(){ draft=[]; draftBatch=null; confirmEl.classList.add("hidden"); rowsEl.innerHTML=""; batchEl.classList.add("hidden"); hideErr(); });
 
   // ── 음성 (음성테스트에서 검증된 iOS-safe 엔진) ──
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
