@@ -1,6 +1,7 @@
-<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.1 (2026-07-18)
+<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.9 (2026-07-18)
      자체완결 웹앱 · Web Speech(ko-KR) + 규칙기반 재료 매칭 + localStorage
-     목적: 냉장고 재료를 실제로 입력하며 재료 마스터·alias를 실측으로 다듬는다. -->
+     목적: 냉장고 재료를 실제로 입력하며 재료 마스터·alias를 실측으로 다듬는다.
+     v0.9: Supabase 배선 — 로컬 우선 + 공유 냉장고 동기화(둘이 냉장고 하나). PostgREST fetch, 라이브러리 무의존. -->
 <title>윤봄네 냉장고 — 입력</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
@@ -154,6 +155,7 @@
   <div class="head-inner">
     <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.8</small></div>
     <div style="display:flex;gap:.4rem">
+      <span id="syncDot" title="공유 동기화 상태" style="align-self:center;font-size:.72rem;font-weight:700;color:var(--muted)">☁︎…</span>
       <button class="export" id="wakeBtn" type="button" aria-pressed="true" title="화면 꺼짐 방지">🔆 화면유지</button>
       <button class="export" id="exportBtn" type="button">내보내기</button>
     </div>
@@ -214,6 +216,126 @@
 <script>
 (function(){
   "use strict";
+
+  // ── Supabase 배선 (로컬 우선 + 공유 냉장고 동기화) ──
+  // 라이브러리 없이 PostgREST에 fetch. anon 키는 공개 키(RLS로 보호). service_role 아님.
+  var SB_URL="https://ymbdwhirylesqugecekc.supabase.co/rest/v1";
+  var SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InltYmR3aGlyeWxlc3F1Z2VjZWtjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzNTIyODMsImV4cCI6MjA5OTkyODI4M30.mAMf8dQ5M_0cKCmTQCDBvFU0A3W2bfMqNqdsdZwaNbM";
+  var SB_HH="a0000000-0000-4000-8000-000000000001";
+  var idByName={};   // 재료명 → ingredients.id (Supabase)
+  var sbOK=false;
+  function sbH(extra){ var h={apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"}; if(extra) for(var k in extra) h[k]=extra[k]; return h; }
+  function sbFetch(method,pathq,body,headers){
+    return fetch(SB_URL+pathq,{method:method,headers:sbH(headers),body:body?JSON.stringify(body):undefined})
+      .then(function(r){ return r.text().then(function(t){ if(!r.ok) throw new Error(r.status+" "+t); return t?JSON.parse(t):null; }); });
+  }
+  function setSync(state){
+    var el=document.getElementById("syncDot"); if(!el) return;
+    if(state==="ok"){ el.textContent="☁︎✓"; el.style.color="var(--accent)"; el.title="공유 냉장고 동기화됨"; }
+    else if(state==="sync"){ el.textContent="☁︎…"; el.style.color="var(--muted)"; el.title="동기화 중…"; }
+    else { el.textContent="☁︎⚠"; el.style.color="var(--open)"; el.title="오프라인 — 로컬에만 저장됨 (연결되면 자동 반영)"; }
+  }
+  function isoOf(ms){ return new Date(ms||Date.now()).toISOString(); }
+  function msOf(iso){ var t=Date.parse(iso); return isNaN(t)?0:t; }
+
+  // 재료 카탈로그 당겨오기 → 다른 폰이 추가한 재료를 로컬 파서에 병합
+  function pullCatalog(){
+    return Promise.all([
+      sbFetch("GET","/ingredients?household_id=eq."+SB_HH+"&select=id,name,category,mgmt_type,default_storage,for_lunchbox"),
+      sbFetch("GET","/ingredient_aliases?select=ingredient_id,alias")
+    ]).then(function(res){
+      var ings=res[0]||[], als=res[1]||[];
+      idByName={}; ings.forEach(function(g){ idByName[g.name]=g.id; });
+      var alById={}; als.forEach(function(a){ (alById[a.ingredient_id]=alById[a.ingredient_id]||[]).push(a.alias); });
+      var changed=false;
+      ings.forEach(function(g){
+        if(!findIng(g.name)){ // 로컬에 없는(=다른 폰이 추가한) 재료면 ext에 편입
+          ext.push({n:g.name,s:g.default_storage,m:g.mgmt_type,c:g.category,a:alById[g.id]||[]}); changed=true;
+        }
+      });
+      if(changed){ save(LS_EXT,ext); SURF=buildSurfaces(); }
+    });
+  }
+
+  // 재고 당겨와 로컬과 병합 (더 최신 것이 이김)
+  function pullInv(){
+    return sbFetch("GET","/inventory?select=storage,status,status_updated_at,ingredients(name)").then(function(rows){
+      var changed=false;
+      (rows||[]).forEach(function(r){
+        if(!r.ingredients) return;
+        var nm=r.ingredients.name, st=r.storage, upd=msOf(r.status_updated_at);
+        inv[nm]=inv[nm]||{};
+        var cur=inv[nm][st];
+        if(!cur || (upd > (cur.updated||0))){ inv[nm][st]={status:r.status,updated:upd,src:cur?cur.src:"공유"}; changed=true; }
+      });
+      if(changed){ save(LS_INV,inv); }
+    });
+  }
+
+  // 재료가 Supabase에 있도록 보장 (없으면 생성 + 별칭)
+  function ensureIngredient(name){
+    if(idByName[name]) return Promise.resolve(idByName[name]);
+    var meta=findIng(name) || {n:name,s:"냉장",m:"신선",c:"기타",a:[]};
+    var row={household_id:SB_HH,name:name,category:meta.c||"기타",mgmt_type:meta.m||"신선",default_storage:meta.s||"냉장",for_lunchbox:!!meta.lunch,is_seed:false};
+    return sbFetch("POST","/ingredients?on_conflict=household_id,name",row,{Prefer:"resolution=merge-duplicates,return=representation"})
+      .then(function(res){
+        var id=(res&&res[0]&&res[0].id); if(!id) return null;
+        idByName[name]=id;
+        var als=(meta.a||[]).map(function(a){ return {ingredient_id:id,alias:a}; });
+        if(als.length) return sbFetch("POST","/ingredient_aliases?on_conflict=ingredient_id,alias",als,{Prefer:"resolution=merge-duplicates,return=minimal"}).then(function(){return id;});
+        return id;
+      });
+  }
+
+  // 로컬 inv[name]의 모든 칸을 Supabase에 upsert (담기·없앰·마이그레이션 공용)
+  function pushInvName(name){
+    if(!inv[name]) return Promise.resolve();
+    return ensureIngredient(name).then(function(id){
+      if(!id) return;
+      var rows=Object.keys(inv[name]).map(function(st){
+        var b=inv[name][st];
+        return {ingredient_id:id,storage:st,status:b.status,status_source:b.src||"음성",status_updated_at:isoOf(b.updated)};
+      });
+      if(!rows.length) return;
+      return sbFetch("POST","/inventory?on_conflict=ingredient_id,storage",rows,{Prefer:"resolution=merge-duplicates,return=minimal"});
+    });
+  }
+  // 여러 이름을 순차 push (요청 폭주 방지). 실패분은 dirty 큐에 넣어 나중에 재전송.
+  function markDirty(names){ var d=load(LS_DIRTY,[]); names.forEach(function(n){ if(d.indexOf(n)<0) d.push(n); }); save(LS_DIRTY,d); }
+  function syncWrite(names){
+    if(!names.length) return Promise.resolve();
+    setSync("sync"); var failed=[];
+    return names.reduce(function(p,nm){
+      return p.then(function(){ return pushInvName(nm).catch(function(){ failed.push(nm); }); });
+    }, Promise.resolve()).then(function(){
+      if(failed.length){ markDirty(failed); setSync("off"); } else { setSync("ok"); }
+    });
+  }
+  function flushDirty(){
+    var d=load(LS_DIRTY,[]); if(!d.length) return Promise.resolve();
+    save(LS_DIRTY,[]);          // 낙관적 클리어 — 실패분은 syncWrite가 다시 넣음
+    return syncWrite(d);
+  }
+
+  // 부팅: 로컬로 즉시 그린 뒤 → 당겨 병합 → (최초 1회) 로컬 재고 밀어올림 → 재그림
+  function sbBoot(){
+    setSync("sync");
+    pullCatalog()
+      .then(pullInv)
+      .then(function(){
+        renderStock(); renderSession();
+        if(!localStorage.getItem("naengbu_sb_pushed")){
+          return syncWrite(Object.keys(inv)).then(function(){ try{localStorage.setItem("naengbu_sb_pushed","1");}catch(e){} });
+        }
+        return flushDirty();
+      })
+      .then(function(){ sbOK=true; var d=load(LS_DIRTY,[]); setSync(d.length?"off":"ok"); })
+      .catch(function(){ sbOK=false; setSync("off"); });
+  }
+  // 다른 폰 변경을 반영: 포커스 복귀 시 재고 다시 당김
+  document.addEventListener("visibilitychange",function(){
+    if(document.visibilityState==="visible"){ pullInv().then(function(){ renderStock(); setSync("ok"); }).catch(function(){ setSync("off"); }); }
+  });
 
   // ── 재료 마스터 (레시피 20개 + 실측 재고/영수증에서 시딩) ──
   // storage: 냉동|냉장|실온 (사용자 노출)  ·  mgmt: 신선|상비 (내부 전용)
@@ -331,7 +453,7 @@
   var STORAGES = ["냉동","냉장","실온"];
 
   // ── localStorage 상태 ──
-  var LS_INV="naengbu_inv", LS_EXT="naengbu_masterext", LS_SESS="naengbu_session";
+  var LS_INV="naengbu_inv", LS_EXT="naengbu_masterext", LS_SESS="naengbu_session", LS_DIRTY="naengbu_dirty";
   function load(k,d){ try{ return JSON.parse(localStorage.getItem(k))||d; }catch(e){ return d; } }
   function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
   // inv[재료명] = { "냉동":{status,updated,src}, "냉장":{...}, "실온":{...} }
@@ -545,6 +667,8 @@
     save(LS_EXT,ext); save(LS_INV,inv); save(LS_SESS,session);
     SURF=buildSurfaces();
     renderSession();
+    var pushList=draft.map(function(d){ return d.name; });
+    syncWrite(pushList);   // 공유 냉장고에 밀어씀 (실패 시 dirty 큐로 자동 재전송)
     var n=draft.length; draft=[]; draftBatch=null;
     confirmEl.classList.add("hidden"); rowsEl.innerHTML=""; batchEl.classList.add("hidden");
     toast(draftMode==="소진"? (n+"개 없음 처리") : (n+"개 담음 ✓"));
@@ -566,7 +690,7 @@
       var left=document.createElement("div");
       left.innerHTML='<div class="n">'+esc(k)+'</div><div class="meta">'+timeAgo(inv[k][curSto].updated)+esc(also)+'</div>';
       var g=document.createElement("button"); g.className="gone"; g.type="button"; g.textContent="없앰";
-      g.addEventListener("click",function(){ inv[k][curSto].status="없음"; inv[k][curSto].updated=Date.now(); save(LS_INV,inv); renderStock(); toast(k+" ("+curSto+") 없음"); });
+      g.addEventListener("click",function(){ inv[k][curSto].status="없음"; inv[k][curSto].updated=Date.now(); save(LS_INV,inv); syncWrite([k]); renderStock(); toast(k+" ("+curSto+") 없음"); });
       it.appendChild(left); it.appendChild(g);
       invlistEl.appendChild(it);
     });
@@ -710,5 +834,6 @@
   function esc(s){ return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
 
   renderStock(); renderSession(); acquireWake();
+  sbBoot();   // 공유 냉장고 동기화 (로컬 우선 → 당겨 병합 → 밀어올림)
 })();
 </script>
