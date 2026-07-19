@@ -10,7 +10,8 @@
      v0.22: 잔멸치→부재료(NAME_ROLE). MASTER에 총각김치·갓김치 추가(김치·절임=반찬). 갓김치 분류 기타→김치·절임(DB). 김치·총각김치 냉장 재고 추가.
      v0.23: 추천 카드 레시피 구조화 — 메인 레시피 먼저 펼쳐 보이고 반찬은 각자 토글로 아래 확장. 레시피=재료+조리과정만(플레이팅/상차림 서술 배제). 추천 함수 출력 스키마를 메뉴별 요리(메인1+반찬N)로 변경(api/recommend.js). 구버전 캐시(플랫 레시피)는 plain 폴백.
      v0.24: 저녁 먹은 기록(meal_logs, 트랙 A). 오늘의저녁 하단에 자연어 입력("김치찌개 먹었어"/"외식했어 스파게티")→파싱→컨펌→기록. 추천 '확정' 시 자동 기록(source=확정, 취소 시 철회). 최근 7개 기록 표시·삭제. 실시간 공유. 추천 함수가 최근1주 제외+최근4주 빈도 신호를 프롬프트에 주입.
-     v0.25: 장보기 항목마다 ✕(빼기) 버튼 — 다시 살 생각 없는 없음재료(예: 갓김치)를 목록에서 제거. shopDismissed 로컬 저장, 재입고(있음)되면 자동 해제. 행 구조를 [구매토글 sbuy]+[빼기 sdel]로 분리. -->
+     v0.25: 장보기 항목마다 ✕(빼기) 버튼 — 다시 살 생각 없는 없음재료(예: 갓김치)를 목록에서 제거. shopDismissed 로컬 저장, 재입고(있음)되면 자동 해제. 행 구조를 [구매토글 sbuy]+[빼기 sdel]로 분리.
+     v0.26: 장보기 상단 요리중 메모 입력 — "쌀 떨어졌어"→재고 없음(공유)·"계란 부족해"→로컬 수동항목. parseNeed(떨어짐/부족/필요 감지+마스터 표준명). shopManual 저장, 재입고 시 자동 해제. ✕는 수동항목이면 목록에서만 제거. 행에 '구매'(체크 앞)·'삭제'(✕ 앞) 라벨. -->
 <title>윤봄네 냉장고 — 입력</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
@@ -283,17 +284,23 @@
 
   /* 장보기 */
   .shop-count{font-size:.85rem;color:var(--muted);margin-bottom:.6rem;font-weight:700}
+  .shop-add{display:flex;gap:.5rem;margin-bottom:.8rem}
+  .shop-add input{flex:1;font:inherit;font-size:1rem;padding:.6rem .7rem;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--ink)}
+  .shop-add button{font:inherit;font-weight:800;font-size:.95rem;padding:.6rem 1rem;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer;white-space:nowrap}
+  :root[data-theme="dark"] .shop-add button{color:#0d1114}
+  @media(prefers-color-scheme:dark){.shop-add button{color:#0d1114}}
   .shop-list{display:flex;flex-direction:column;gap:.4rem}
   .shop-item{display:flex;align-items:stretch;gap:.4rem}
   .shop-item .sbuy{flex:1;display:flex;align-items:center;gap:.6rem;text-align:left;font:inherit;background:var(--raised);border:1px solid var(--line);border-radius:11px;padding:.7rem .85rem;cursor:pointer;-webkit-tap-highlight-color:transparent;min-width:0}
   .shop-item .sinfo{flex:1;display:flex;flex-direction:column;gap:.1rem;align-items:flex-start;min-width:0}
   .shop-item .snm{font-weight:650;font-size:1rem}
   .shop-item .srsn{font-size:.72rem;color:var(--muted)}
+  .shop-item .slbl{font-size:.68rem;font-weight:700;color:var(--muted);flex-shrink:0}
   .shop-item .chk{font-size:1.4rem;color:var(--muted);line-height:1;flex-shrink:0}
   .shop-item.got .sbuy{opacity:.55}
   .shop-item.got .snm{text-decoration:line-through}
   .shop-item.got .chk{color:var(--accent)}
-  .shop-item .sdel{flex-shrink:0;width:2.6rem;font:inherit;font-size:1.1rem;color:var(--muted);background:var(--raised);border:1px solid var(--line);border-radius:11px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .shop-item .sdel{flex-shrink:0;display:flex;align-items:center;gap:.15rem;padding:0 .7rem;font:inherit;font-size:1.05rem;color:var(--muted);background:var(--raised);border:1px solid var(--line);border-radius:11px;cursor:pointer;-webkit-tap-highlight-color:transparent}
   .shop-item .sdel:active{background:var(--ground)}
   .shop-divider{font-size:.74rem;font-weight:800;color:var(--muted);letter-spacing:.04em;margin:.6rem 0 .05rem;padding-left:.2rem}
 
@@ -381,8 +388,12 @@
     </div>
   </section>
 
-  <!-- 장보기 (파생 뷰: 없음 재료 ∪ 오늘 수락 카드 사올것) -->
+  <!-- 장보기 (파생 뷰: 없음 재료 ∪ 오늘 수락 카드 사올것 ∪ 요리중 메모) -->
   <section class="view hidden" id="view-shop">
+    <div class="shop-add">
+      <input id="shopText" type="text" autocomplete="off" placeholder="요리하다 발견한 거 적기 — 예: 쌀 떨어졌어, 계란 부족해">
+      <button id="shopAdd" type="button">추가</button>
+    </div>
     <div class="shop-head" id="shopHead"></div>
     <div class="shop-list" id="shopList"></div>
   </section>
@@ -1037,6 +1048,7 @@
   var LS_REC="naengbu_rec";
   var LS_MEALS="naengbu_meals";   // 저녁 먹은 기록 로컬 미러 (오프라인/즉시표시)
   var LS_SHOPDISS="naengbu_shopdiss";   // 장보기에서 뺀 항목(다시 살 생각 없음) — 재입고되면 자동 해제
+  var LS_SHOPADD="naengbu_shopadd";     // 요리중 메모로 직접 추가한 장보기 항목 {name:reason} — 재입고되면 자동 해제
   function recToday(){ return new Date().toLocaleDateString("en-CA"); } // YYYY-MM-DD(로컬)
   // auto=true면 오늘 캐시가 없을 때 자동으로 추천 생성(서비스 열면 오늘의저녁 자동 구성)
   function loadRecCache(auto){
@@ -1215,8 +1227,8 @@
       .replace(/먹었어요?|먹었다|먹음|먹었|해먹었어요?|해먹음|했어요?|먹고|먹는다/g," ")
       .replace(/[.,!~]/g," ")
       .replace(/\s+/g," ").trim();
-    // 조사 정리 (끝의 으로/로/를/을/이랑/랑/하고)
-    var parts=s.split(" ").map(function(w){ return w.replace(/(으로|로|를|을|이랑|랑|하고|이|가)$/,""); }).filter(Boolean);
+    // 조사 정리 — 목적격만 (으로/로/를/을). '이/가'는 메뉴명 끝 글자(생선구이·떡볶이·계란말이)를 깨뜨려 제외.
+    var parts=s.split(" ").map(function(w){ return w.replace(/(으로|로|를|을)$/,""); }).filter(Boolean);
     var menu, note=null;
     if(out){ menu=parts[0]||"외식"; if(parts.length>1) note=parts.slice(1).join(" "); }
     else { menu=parts.join(" "); }
@@ -1299,6 +1311,52 @@
   // ── 장보기 (파생: 없음 재료 ∪ 오늘 수락 카드 사올것) ──
   var shopChecked={};
   var shopDismissed=load(LS_SHOPDISS,{})||{};   // {재료명:1} — 장보기에서 뺀 것(로컬, 재입고 시 자동 해제)
+  var shopManual=load(LS_SHOPADD,{})||{};       // {재료명:사유} — 요리중 메모로 추가(로컬, 재입고 시 자동 해제)
+  // 요리중 메모 파싱: "쌀 떨어졌어" → 쌀/떨어짐, "계란 부족해" → 계란/부족, "간장 사야해" → 간장/필요
+  function parseNeed(raw){
+    var t=(raw||"").trim(); if(!t) return [];
+    return t.split(/[,.\n]|그리고/).map(function(chunk){
+      var c=chunk.trim(); if(!c) return null;
+      // 부족을 먼저 판정('거의 없어'는 부족) → 그다음 떨어짐(없어/없다 포함) → 나머지는 필요
+      var reason = /부족|조금\s*남|얼마\s?안|거의\s?없|모자라/.test(c) ? "부족"
+                 : (/떨어|바닥|다\s*썼|다\s*먹었|다\s*씀|없어|없네|없다|없음/.test(c) ? "떨어짐" : "필요");
+      // 1) 마스터 표면형을 스캔 — 문장 안에 있는 알려진 재료를 표준명으로 (조사 걱정 없음, 긴 것 우선)
+      var name=null, known=false;
+      for(var i=0;i<SURF.length;i++){ if(c.indexOf(SURF[i].surf)>=0){ name=SURF[i].ing.n; known=true; break; } }
+      // 2) 못 찾으면: 사유·동사 어절 통째로 제거(어미까지) 후 남은 말을 재료명으로 (미등록 재료)
+      if(!name){
+        name=c.replace(/(떨어졌|다\s*썼|다\s*떨어|없어졌|다\s*먹었|다\s*씀|바닥|부족|모자라|조금\s*남|얼마\s*안\s*남|거의\s*없|사야|사와야|필요|없어|없네|없다|없음)\S*/g," ")
+              .replace(/\s+/g," ").trim();
+        if(name.length>=3) name=name.replace(/(이|가|은|는|을|를|의)$/,"");
+      }
+      if(!name) return null;
+      return { name:name, reason:reason, known:known };
+    }).filter(Boolean);
+  }
+  function addNeed(){
+    var inp=document.getElementById("shopText"); var items=parseNeed(inp.value);
+    if(!items.length){ toast("무엇이 필요한지 적어주세요"); return; }
+    var added=[], toSync=[];
+    items.forEach(function(it){
+      if(it.reason==="떨어짐" && it.known){
+        // 재고를 '없음'으로 → 장보기에 '떨어짐'으로 자동 노출(공유). 칸 없으면 기본 보관에 생성.
+        var ing=findIng(it.name); var st=(ing&&ing.s)||"실온";
+        inv[it.name]=inv[it.name]||{};
+        if(!Object.keys(inv[it.name]).length) inv[it.name][st]={status:"없음",updated:Date.now(),src:"메모"};
+        else Object.keys(inv[it.name]).forEach(function(s){ inv[it.name][s].status="없음"; inv[it.name][s].updated=Date.now(); });
+        delete shopDismissed[it.name]; toSync.push(it.name);
+      } else {
+        shopManual[it.name]=it.reason;   // 부족/필요/미등록 → 로컬 수동 항목
+      }
+      added.push(it.name);
+    });
+    if(toSync.length){ save(LS_INV,inv); syncWrite(uniq(toSync)); }
+    save(LS_SHOPADD,shopManual); save(LS_SHOPDISS,shopDismissed);
+    inp.value=""; renderShop();
+    toast(added.join(", ")+" 장보기에 추가");
+  }
+  document.getElementById("shopAdd").addEventListener("click",addNeed);
+  document.getElementById("shopText").addEventListener("keydown",function(e){ if(e.key==="Enter") addNeed(); });
   function computeShop(){
     var items={};
     function add(name,reason){ if(!name)return; if(!items[name]) items[name]={name:name,reasons:[]}; if(items[name].reasons.indexOf(reason)<0) items[name].reasons.push(reason); }
@@ -1314,6 +1372,12 @@
     if(c && c.date===recToday() && c.cards && c.chosen!=null && c.cards[c.chosen]){
       (c.cards[c.chosen].사올것||[]).forEach(function(nm){ if(!inStock(nm)) add(nm,"오늘 메뉴"); });
     }
+    // 3) 요리중 메모로 직접 추가한 항목 (부족/필요). 재입고(있음)되면 자동 해제.
+    Object.keys(shopManual).forEach(function(nm){
+      var b=inv[nm], has=false; if(b) STORAGES.forEach(function(s){ if(b[s]&&b[s].status==="있음")has=true; });
+      if(has){ delete shopManual[nm]; save(LS_SHOPADD,shopManual); return; }
+      add(nm, shopManual[nm]); items[nm].manual=true;
+    });
     // '빼기'한 항목 제외 (다시 살 생각 없는 것)
     return Object.keys(items).filter(function(k){ return !shopDismissed[k]; }).map(function(k){ return items[k]; }).sort(function(a,b){ return a.name.localeCompare(b.name,"ko"); });
   }
@@ -1332,18 +1396,17 @@
       var on=!!shopChecked[it.name];
       var row=document.createElement("div"); row.className="shop-item"+(on?" got":"");
       var buy=document.createElement("button"); buy.type="button"; buy.className="sbuy";
-      buy.innerHTML='<span class="sinfo"><span class="snm">'+esc(it.name)+'</span><span class="srsn">'+esc(it.reasons.join(" · "))+'</span></span><span class="chk">'+(on?"☑":"☐")+'</span>';
+      buy.innerHTML='<span class="sinfo"><span class="snm">'+esc(it.name)+'</span><span class="srsn">'+esc(it.reasons.join(" · "))+'</span></span><span class="slbl">구매</span><span class="chk">'+(on?"☑":"☐")+'</span>';
       buy.addEventListener("click",function(){
         var nv=!shopChecked[it.name]; shopChecked[it.name]=nv;
         row.classList.toggle("got",nv);
         buy.querySelector(".chk").textContent=nv?"☑":"☐";
         head.innerHTML=shopHeadHTML(items);
       });
-      var del=document.createElement("button"); del.type="button"; del.className="sdel"; del.textContent="✕"; del.title="장보기에서 빼기 (다시 살 것 아님)";
+      var del=document.createElement("button"); del.type="button"; del.className="sdel"; del.innerHTML='<span class="slbl">삭제</span> ✕'; del.title="장보기에서 빼기";
       del.addEventListener("click",function(){
-        shopDismissed[it.name]=1; save(LS_SHOPDISS,shopDismissed);
-        renderShop();
-        toast("‘"+it.name+"’ 장보기에서 뺐어요 (재입고되면 자동 복귀)");
+        if(it.manual){ delete shopManual[it.name]; save(LS_SHOPADD,shopManual); renderShop(); toast("‘"+it.name+"’ 뺐어요"); }
+        else { shopDismissed[it.name]=1; save(LS_SHOPDISS,shopDismissed); renderShop(); toast("‘"+it.name+"’ 장보기에서 뺐어요 (재입고되면 자동 복귀)"); }
       });
       row.appendChild(buy); row.appendChild(del);
       return row;
