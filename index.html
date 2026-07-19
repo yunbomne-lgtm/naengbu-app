@@ -1,7 +1,9 @@
-<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.15 (2026-07-18)
-     자체완결 웹앱 · Web Speech(ko-KR) + 규칙기반 재료 매칭 + localStorage
+<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.18 (2026-07-19)
+     자체완결 웹앱 · Web Speech(ko-KR) + 규칙기반 재료 매칭 + localStorage. Supabase 배선(로컬 우선 + 공유 냉장고 동기화, PostgREST fetch, 라이브러리 무의존).
      목적: 냉장고 재료를 실제로 입력하며 재료 마스터·alias를 실측으로 다듬는다.
-     v0.9: Supabase 배선 — 로컬 우선 + 공유 냉장고 동기화(둘이 냉장고 하나). PostgREST fetch, 라이브러리 무의존. -->
+     v0.16: 입력 완료 후 식재료 화면 리셋 / 레시피 추가 폼 별도 페이지 전환 / 레시피 분류 '신규' 제거 / 계란 분류 알류.
+     v0.17: 오늘의저녁 카드 버튼 3개(선택·패스·레시피), 레시피 토글, 선택 시 장보기 자동추가+차감, 패스 되돌리기.
+     v0.18: 헤더 정리 — 버전 라벨·공유상태(syncDot)·화면유지 토글·내보내기 제거. 화면유지 기본 ON, 동기화 백그라운드 계속. -->
 <title>윤봄네 냉장고 — 입력</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
@@ -160,6 +162,9 @@
   .rec-top{display:flex;justify-content:flex-end;margin-bottom:.6rem}
   .menu-add-btn{font:inherit;font-size:.82rem;font-weight:700;padding:.4rem .85rem;border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);border-radius:999px;cursor:pointer}
   .menu-form{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:.8rem;margin-bottom:.8rem;display:flex;flex-direction:column;gap:.5rem}
+  .mf-head{display:flex;align-items:center;gap:.6rem;margin-bottom:.15rem}
+  .mf-head b{font-size:1.05rem;letter-spacing:-.01em}
+  .mf-back{font:inherit;font-size:.86rem;font-weight:700;color:var(--accent);background:none;border:0;cursor:pointer;padding:.2rem 0}
   .menu-form input,.menu-form select,.menu-form textarea{font:inherit;font-size:.92rem;padding:.55rem .65rem;border:1px solid var(--line);border-radius:9px;background:var(--ground);color:var(--ink);width:100%}
   .menu-form textarea{resize:vertical;line-height:1.5}
   .mf-row{display:flex;gap:.5rem}
@@ -199,6 +204,9 @@
   :root[data-theme="dark"] .rc-accept{color:#0d1114}
   @media(prefers-color-scheme:dark){.rc-accept{color:#0d1114}}
   .rc-reject{font:inherit;font-weight:700;font-size:.9rem;padding:.6rem 1.1rem;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--muted);cursor:pointer}
+  .rc-recipe-btn{font:inherit;font-weight:700;font-size:.9rem;padding:.6rem 1rem;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--ink-soft);cursor:pointer;white-space:nowrap}
+  .rc-recipe-btn[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+  .rc-chosen{flex:1;align-self:center;font-size:.92rem;font-weight:800;color:var(--accent)}
   .rc-recipe{margin-top:.7rem;white-space:pre-wrap;word-break:break-word;font-size:1.02rem;line-height:1.65;background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:.85rem}
 
   /* 장보기 */
@@ -216,12 +224,7 @@
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고<small>입력 프로토타입 v0.15</small></div>
-    <div style="display:flex;gap:.4rem">
-      <span id="syncDot" title="공유 동기화 상태" style="align-self:center;font-size:.72rem;font-weight:700;color:var(--muted)">☁︎…</span>
-      <button class="export" id="wakeBtn" type="button" aria-pressed="true" title="화면 꺼짐 방지">🔆 화면유지</button>
-      <button class="export" id="exportBtn" type="button">내보내기</button>
-    </div>
+    <div class="brand">윤봄네 냉장고</div>
   </div>
   <div class="head-inner">
     <div class="tabs" role="tablist" style="flex:1">
@@ -282,9 +285,10 @@
       <button class="menu-add-btn" id="menuAddBtn" type="button">+ 레시피 추가</button>
     </div>
     <div class="menu-form hidden" id="menuForm">
+      <div class="mf-head"><button class="mf-back" type="button" id="mfBack">‹ 목록</button><b>레시피 추가</b></div>
       <input id="mfName" type="text" placeholder="메뉴 이름 (예: 계란찜)" autocomplete="off">
       <div class="mf-row">
-        <select id="mfCat"><option>메인</option><option>반찬</option><option>기타</option><option>신규</option></select>
+        <select id="mfCat"><option>메인</option><option>반찬</option><option>기타</option></select>
         <input id="mfServ" type="text" placeholder="기준 인분 (선택)" autocomplete="off">
       </div>
       <textarea id="mfText" rows="6" placeholder="레시피 본문 — 재료와 조리 순서를 그대로 적어요"></textarea>
@@ -526,7 +530,7 @@
     {n:"햄",s:"냉장",m:"상비",c:"육류"},
     {n:"베이컨",s:"냉장",m:"상비",c:"육류"},
     // 유제품
-    {n:"계란",s:"냉장",m:"상비",c:"유제품",a:["달걀","특란","무항생제란"]},
+    {n:"계란",s:"냉장",m:"상비",c:"알류",a:["달걀","특란","무항생제란"]},
     {n:"우유",s:"냉장",m:"상비",c:"유제품"},
     {n:"버터",s:"냉장",m:"상비",c:"유제품"},
     {n:"슈레드치즈",s:"냉장",m:"상비",c:"유제품",a:["모짜렐라","모짜렐라치즈","모차렐라","피자치즈","슈레드","치즈"]},
@@ -578,7 +582,7 @@
     {n:"크림수프",s:"실온",m:"상비",c:"기타"}
   ];
 
-  var CATS = ["육류","수산물","채소","과일","유제품","곡류·면","소스·양념","김치·절임","냉동식품","반찬·조리","기타"];
+  var CATS = ["육류","수산물","채소","과일","유제품","알류","곡류·면","소스·양념","김치·절임","냉동식품","반찬·조리","기타"];
   var STORAGES = ["냉동","냉장","실온"];
 
   // ── localStorage 상태 ──
@@ -802,6 +806,16 @@
     confirmEl.classList.add("hidden"); rowsEl.innerHTML=""; batchEl.classList.add("hidden");
     toast(draftMode==="소진"? (n+"개 없음 처리") : (n+"개 담음 ✓"));
     renderStock();
+    resetInputView();   // 냉장고로 넘어갔으니 입력 화면은 깨끗이
+  }
+  // 입력 완료 후 식재료 화면을 초기 상태로 되돌림 (세션 피드·마이크 힌트·입력칸 리셋)
+  function resetInputView(){
+    session=[]; save(LS_SESS,session); renderSession();
+    var ti=document.getElementById("textin"), ai=document.getElementById("addin");
+    if(ti) ti.value=""; if(ai) ai.value="";
+    if(micHint) micHint.textContent="탭해서 말하기 — 예: “두부 계란 대파 샀어”";
+    hideErr();
+    window.scrollTo({top:0,behavior:"smooth"});
   }
 
   // ── 재고 렌더 ──
@@ -828,7 +842,7 @@
 
   // ── 레시피 (menus) ──
   var menusCache=null, recCat="전체";
-  var REC_CAT_ORDER=["메인","반찬","기타","신규"];   // 분류 노출 순서 고정
+  var REC_CAT_ORDER=["메인","반찬","기타"];   // 분류 노출 순서 고정
   function loadMenus(){
     if(menusCache){ renderMenus(); return; }
     sbFetch("GET","/menus?household_id=eq."+SB_HH+"&select=name,category,base_servings,recipe_text,recipe_url&order=category,name")
@@ -839,6 +853,7 @@
     var listEl=document.getElementById("menuList"), catsEl=document.getElementById("recCats"), detEl=document.getElementById("recipeDetail");
     detEl.classList.add("hidden"); listEl.classList.remove("hidden"); catsEl.classList.remove("hidden");
     document.getElementById("recTop").classList.remove("hidden");
+    document.getElementById("menuForm").classList.add("hidden");
     if(!menusCache || !menusCache.length){ listEl.innerHTML='<div class="empty">아직 레시피가 없어요. 위 “+ 레시피 추가”로 넣어보세요.</div>'; catsEl.innerHTML=""; return; }
     var present={}; menusCache.forEach(function(m){ present[m.category]=true; });
     var cats=["전체"];
@@ -871,11 +886,19 @@
     window.scrollTo(0,0);
   }
   // 레시피 추가 (Supabase menus에 저장 → 온라인 반영, 다른 폰도 공유)
-  document.getElementById("menuAddBtn").addEventListener("click",function(){
-    var f=document.getElementById("menuForm"); f.classList.toggle("hidden");
-    if(!f.classList.contains("hidden")) document.getElementById("mfName").focus();
-  });
-  document.getElementById("mfCancel").addEventListener("click",function(){ document.getElementById("menuForm").classList.add("hidden"); });
+  // 목록 위 버튼 → 별도 폼 페이지로 전환 (목록/분류/상세를 덮음). 저장·취소·뒤로 시 목록으로 복귀.
+  function showMenuForm(){
+    document.getElementById("menuList").classList.add("hidden");
+    document.getElementById("recCats").classList.add("hidden");
+    document.getElementById("recipeDetail").classList.add("hidden");
+    document.getElementById("recTop").classList.add("hidden");
+    document.getElementById("menuForm").classList.remove("hidden");
+    document.getElementById("mfName").focus();
+    window.scrollTo(0,0);
+  }
+  document.getElementById("menuAddBtn").addEventListener("click",showMenuForm);
+  document.getElementById("mfCancel").addEventListener("click",renderMenus);
+  document.getElementById("mfBack").addEventListener("click",renderMenus);
   document.getElementById("mfSave").addEventListener("click",function(){
     var name=document.getElementById("mfName").value.trim();
     if(!name){ toast("메뉴 이름을 입력하세요"); return; }
@@ -927,6 +950,7 @@
       .catch(function(e){ go.disabled=false; sub.textContent="네트워크 오류: "+e.message; });
   }
   function saveRecStatus(idx,st){ var c=load(LS_REC,null); if(!c)return; c.status=c.status||{}; c.status[idx]=st; save(LS_REC,c); }
+  function renderRecFromCache(){ var c=load(LS_REC,null); if(c&&c.cards) renderRecCards(c.cards, c.status||{}); }
   function renderRecCards(cards,status){
     var el=document.getElementById("recCards"); el.innerHTML="";
     cards.forEach(function(c,idx){
@@ -937,27 +961,42 @@
         : '<div class="rc-buy none">🛒 살 것 없음 — 냉장고로 충분</div>';
       var side=(c.반찬&&c.반찬.length)?'<div class="rc-side">곁들임: '+esc(c.반찬.join(" · "))+'</div>':'';
       card.innerHTML='<span class="rc-type">'+esc(c.형태)+'</span><h3>'+esc(c.이름)+'</h3>'+buy+side;
-      if(st==="수락"){ appendRecRecipe(card,c); }
-      else if(st!=="거절"){
-        var acts=document.createElement("div"); acts.className="rc-actions";
-        var acc=document.createElement("button"); acc.className="rc-accept"; acc.type="button"; acc.textContent="이걸로 ✓";
-        acc.addEventListener("click",function(){ acceptRec(c,idx,card); });
-        var rej=document.createElement("button"); rej.className="rc-reject"; rej.type="button"; rej.textContent="패스";
-        rej.addEventListener("click",function(){ saveRecStatus(idx,"거절"); card.classList.add("gone"); acts.remove(); });
-        acts.appendChild(acc); acts.appendChild(rej); card.appendChild(acts);
+
+      // 레시피 블록 — 기본 숨김, [레시피] 버튼으로 열고 닫음 (되돌아오기)
+      var recipe=document.createElement("div"); recipe.className="rc-recipe hidden";
+      recipe.textContent=(c.레시피||[]).join("\n")||"(레시피 없음)";
+
+      var acts=document.createElement("div"); acts.className="rc-actions";
+      function recipeBtn(){
+        var b=document.createElement("button"); b.className="rc-recipe-btn"; b.type="button";
+        b.textContent="레시피"; b.setAttribute("aria-expanded","false");
+        b.addEventListener("click",function(){
+          var hidden=recipe.classList.toggle("hidden");
+          b.textContent=hidden?"레시피":"레시피 닫기"; b.setAttribute("aria-expanded",hidden?"false":"true");
+        });
+        return b;
       }
+      if(st==="수락"){
+        var badge=document.createElement("span"); badge.className="rc-chosen";
+        badge.textContent=(c.사올것&&c.사올것.length)?"✓ 선택됨 · 장보기에 담김":"✓ 선택됨";
+        acts.appendChild(badge); acts.appendChild(recipeBtn());
+      } else if(st==="거절"){
+        var back=document.createElement("button"); back.className="rc-reject"; back.type="button"; back.textContent="되돌리기";
+        back.addEventListener("click",function(){ saveRecStatus(idx,null); renderRecFromCache(); });
+        acts.appendChild(back); acts.appendChild(recipeBtn());
+      } else {
+        var acc=document.createElement("button"); acc.className="rc-accept"; acc.type="button"; acc.textContent="선택";
+        acc.addEventListener("click",function(){ acceptRec(c,idx); });
+        var rej=document.createElement("button"); rej.className="rc-reject"; rej.type="button"; rej.textContent="패스";
+        rej.addEventListener("click",function(){ saveRecStatus(idx,"거절"); renderRecFromCache(); });
+        acts.appendChild(acc); acts.appendChild(rej); acts.appendChild(recipeBtn());
+      }
+      card.appendChild(acts); card.appendChild(recipe);
       el.appendChild(card);
     });
   }
-  function appendRecRecipe(card,c){
-    if(card.querySelector(".rc-recipe")) return;
-    var rec=document.createElement("div"); rec.className="rc-recipe"; rec.textContent=(c.레시피||[]).join("\n")||"(레시피 없음)";
-    card.appendChild(rec);
-  }
-  function acceptRec(c,idx,card){
-    saveRecStatus(idx,"수락"); card.classList.add("accepted");
-    var acts=card.querySelector(".rc-actions"); if(acts) acts.remove();
-    appendRecRecipe(card,c);
+  function acceptRec(c,idx){
+    saveRecStatus(idx,"수락");
     // 차감: '쓰는재고' 중 신선재료를 없음 처리 (상비는 안 깎음 — v8 §2)
     var used=[];
     (c.쓰는재고||[]).forEach(function(nm){
@@ -968,8 +1007,9 @@
       }
     });
     if(used.length){ save(LS_INV,inv); syncWrite(used); renderStock(); }
-    toast("'"+c.이름+"' 선택 ✓"+(used.length?" · "+used.length+"개 차감":""));
-    window.scrollTo({top:card.offsetTop-70,behavior:"smooth"});
+    renderRecFromCache();   // 선택 상태로 다시 그림 (장보기는 computeShop이 수락 카드에서 자동 반영)
+    var addN=(c.사올것||[]).length;
+    toast("'"+c.이름+"' 선택 ✓"+(addN?" · 장보기 "+addN+"개":"")+(used.length?" · "+used.length+"개 차감":""));
   }
   document.getElementById("recGo").addEventListener("click",fetchRec);
 
@@ -1087,30 +1127,6 @@
     if(listening) micStop(); else micStart();
   });
 
-  // ── 내보내기 (마스터 확장 + 재고 → 텍스트) ──
-  document.getElementById("exportBtn").addEventListener("click",function(){
-    var lines=["# 윤봄네 냉장고 — 입력 스냅샷", new Date().toLocaleString("ko-KR"), ""];
-    lines.push("## 사용자가 추가한 신규 재료 ("+ext.length+")  ← 마스터에 반영할 것");
-    if(ext.length===0) lines.push("  (없음)");
-    ext.forEach(function(x){ lines.push("  · "+x.n+" | "+x.s+" | "+x.m+" | "+x.c+(x.a&&x.a.length?" | alias: "+x.a.join(", "):"")); });
-    lines.push("");
-    lines.push("## 현재 재고");
-    STORAGES.forEach(function(s){
-      var has=Object.keys(inv).filter(function(k){return inv[k][s]&&inv[k][s].status==="있음";}).sort();
-      lines.push("  ["+s+"] "+(has.join(", ")||"-"));
-    });
-    var gone=Object.keys(inv).filter(function(k){
-      var b=inv[k]; var any있=false, any없=false;
-      STORAGES.forEach(function(s){ if(b[s]){ if(b[s].status==="있음")any있=true; else any없=true; } });
-      return any없 && !any있;
-    }).sort();
-    lines.push("  [없음] "+(gone.join(", ")||"-"));
-    var out=lines.join("\n");
-    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(out).then(function(){toast("복사됨 ✓");},function(){fb(out);}); }
-    else fb(out);
-    function fb(t){ var ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch(e){} document.body.removeChild(ta); toast("복사됨 ✓"); }
-  });
-
   // ── 세션 피드 (연속성) ──
   function renderSession(){
     var el=document.getElementById("session");
@@ -1121,21 +1137,12 @@
     document.getElementById("sessclr").addEventListener("click",function(){ session=[]; save(LS_SESS,session); renderSession(); toast("세션 비움"); });
   }
 
-  // ── 화면 꺼짐 방지 (Wake Lock, iOS 16.4+) ──
-  var wakeLock=null, keepAwake=true;
-  function updateWakeChip(){ var b=document.getElementById("wakeBtn"); if(b) b.setAttribute("aria-pressed", keepAwake?"true":"false"); }
+  // ── 화면 꺼짐 방지 (Wake Lock, iOS 16.4+) — 항상 켜둠 (토글 버튼 없음) ──
+  var wakeLock=null, keepAwake=("wakeLock" in navigator);
   function acquireWake(){
-    if(!keepAwake || !("wakeLock" in navigator) || wakeLock) return;
+    if(!keepAwake || wakeLock) return;
     navigator.wakeLock.request("screen").then(function(wl){ wakeLock=wl; wl.addEventListener("release",function(){ wakeLock=null; }); }).catch(function(){});
   }
-  function releaseWake(){ if(wakeLock){ try{wakeLock.release();}catch(e){} wakeLock=null; } }
-  var wakeBtn=document.getElementById("wakeBtn");
-  if(!("wakeLock" in navigator)){ keepAwake=false; wakeBtn.textContent="🔆 미지원"; wakeBtn.disabled=true; }
-  updateWakeChip();
-  wakeBtn.addEventListener("click",function(){
-    keepAwake=!keepAwake; updateWakeChip();
-    if(keepAwake){ acquireWake(); toast("화면 유지 켬"); } else { releaseWake(); toast("화면 유지 끔"); }
-  });
   document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible" && keepAwake) acquireWake(); });
 
   // ── 유틸 ──
