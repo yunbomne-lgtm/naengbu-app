@@ -1,11 +1,24 @@
-<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.18 (2026-07-19)
+<!-- 윤봄네 냉장고 — 입력 프로토타입 v0.19 (2026-07-19)
      자체완결 웹앱 · Web Speech(ko-KR) + 규칙기반 재료 매칭 + localStorage. Supabase 배선(로컬 우선 + 공유 냉장고 동기화, PostgREST fetch, 라이브러리 무의존).
      목적: 냉장고 재료를 실제로 입력하며 재료 마스터·alias를 실측으로 다듬는다.
      v0.16: 입력 완료 후 식재료 화면 리셋 / 레시피 추가 폼 별도 페이지 전환 / 레시피 분류 '신규' 제거 / 계란 분류 알류.
      v0.17: 오늘의저녁 카드 버튼 3개(선택·패스·레시피), 레시피 토글, 선택 시 장보기 자동추가+차감, 패스 되돌리기.
-     v0.18: 헤더 정리 — 버전 라벨·공유상태(syncDot)·화면유지 토글·내보내기 제거. 화면유지 기본 ON, 동기화 백그라운드 계속. -->
+     v0.18: 헤더 정리 — 버전 라벨·공유상태(syncDot)·화면유지 토글·내보내기 제거. 화면유지 기본 ON, 동기화 백그라운드 계속.
+     v0.19: 실측 정규화 — 얼린오징어→오징어 alias 편입(MASTER+renameInv 로컬 마이그레이션), 신규 냉동 재료 다수 분류 정리(DB).
+     v0.20: 오늘의저녁 단일선택(하나 고르면 확정, '메뉴 다시 선택하기'로 복구+차감복원). 사올것이 이미 재고면 '집에 있음' 표시+장보기 제외. 냉장고=역할별(주재료/부재료/반찬/간식/양념류/기타) 그룹+보관배지, 상단 칸탭 제거, 칸마다 카드. 탭순서 오늘의저녁·레시피·식재료·장보기·냉장고. 장보기 체크 오른쪽+구매함 정리. 없앰→소진. 레시피 목록 상단·추가버튼 아래로.
+     v0.21: 냉장고 상단 역할 인덱스(필터, 맨 뒤 '전체'). 국물용멸치·다시마·김은 NAME_ROLE로 기타. 레시피 추가폼을 별도 페이지(view-recipe-add)로 완전 분리 — 목록 화면엔 폼 없음, 하단 추가버튼→별도 페이지. -->
 <title>윤봄네 냉장고 — 입력</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+<!-- 홈화면 아이콘 + 전체화면(standalone) -->
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2E7D5B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="윤봄네냉장고">
 
 <style>
   :root {
@@ -143,11 +156,20 @@
   .stotabs button[aria-selected="true"][data-s="냉동"]{background:var(--cold-soft);color:var(--cold);border-color:transparent}
   .stotabs button[aria-selected="true"][data-s="냉장"]{background:var(--cool-soft);color:var(--cool);border-color:transparent}
   .stotabs button[aria-selected="true"][data-s="실온"]{background:var(--room-soft);color:var(--room);border-color:transparent}
-  .invlist{display:flex;flex-direction:column;gap:.4rem}
-  .invitem{background:var(--raised);border:1px solid var(--line);border-radius:11px;padding:.6rem .8rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem}
-  .invitem .n{font-weight:600}
-  .invitem .meta{font-size:.72rem;color:var(--muted);font-family:var(--mono)}
-  .invitem .gone{font:inherit;font-size:.76rem;font-weight:700;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:.25rem .5rem;cursor:pointer}
+  .rolefilter{display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.7rem}
+  .rolefilter button{font:inherit;font-size:.8rem;font-weight:700;padding:.35rem .7rem;border-radius:999px;border:1px solid var(--line);background:var(--raised);color:var(--muted);cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .rolefilter button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+  .invlist{display:flex;flex-direction:column}
+  .invsec-h{font-size:.74rem;font-weight:800;color:var(--muted);letter-spacing:.04em;margin:.5rem 0 .35rem;padding-left:.2rem}
+  .invgrid{display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.5rem}
+  .invitem{background:var(--raised);border:1px solid var(--line);border-radius:11px;padding:.55rem .6rem;display:flex;align-items:center;justify-content:space-between;gap:.4rem;min-width:0}
+  .invitem .col{min-width:0;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;gap:.15rem}
+  .invitem .n{font-weight:600;font-size:.95rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+  .sto-badge{font-size:.64rem;font-weight:800;padding:.06rem .38rem;border-radius:999px}
+  .sto-badge[data-s="냉동"]{background:var(--cold-soft);color:var(--cold)}
+  .sto-badge[data-s="냉장"]{background:var(--cool-soft);color:var(--cool)}
+  .sto-badge[data-s="실온"]{background:var(--room-soft);color:var(--room)}
+  .invitem .gone{font:inherit;font-size:.74rem;font-weight:700;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:.25rem .45rem;cursor:pointer;flex-shrink:0}
   .empty{color:var(--muted);text-align:center;padding:2rem 0;font-size:.9rem}
 
   /* 레시피 */
@@ -158,8 +180,12 @@
   .menu-item{background:var(--raised);border:1px solid var(--line);border-radius:11px;padding:.7rem .85rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem;cursor:pointer;font:inherit;width:100%;text-align:left;-webkit-tap-highlight-color:transparent}
   .menu-item .mn{font-weight:650;font-size:1rem}
   .menu-item .mc{font-size:.72rem;color:var(--muted);margin-left:.35rem}
-  .menu-item .arw{color:var(--muted);font-size:1.2rem;line-height:1}
-  .rec-top{display:flex;justify-content:flex-end;margin-bottom:.6rem}
+  .menu-item .arw{color:var(--muted);font-size:1.2rem;line-height:1;transition:transform .15s}
+  .menu-item.open .arw{transform:rotate(90deg)}
+  .menu-detail{background:var(--raised);border:1px solid var(--line);border-radius:11px;margin-top:.35rem;padding:.9rem;color:var(--ink)}
+  .menu-detail .md-body{white-space:pre-wrap;word-break:break-word;font-size:1.05rem;line-height:1.7}
+  .menu-detail .rurl{display:inline-block;margin-top:.7rem;font-size:.86rem;color:var(--cold);text-decoration:underline}
+  .rec-top{display:flex;justify-content:center;margin:.8rem 0 .3rem}
   .menu-add-btn{font:inherit;font-size:.82rem;font-weight:700;padding:.4rem .85rem;border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);border-radius:999px;cursor:pointer}
   .menu-form{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:.8rem;margin-bottom:.8rem;display:flex;flex-direction:column;gap:.5rem}
   .mf-head{display:flex;align-items:center;gap:.6rem;margin-bottom:.15rem}
@@ -198,6 +224,7 @@
   .rc-buy{font-size:.92rem;margin:.2rem 0}
   .rc-buy b{color:var(--rec)}
   .rc-buy.none{color:var(--muted)}
+  .rc-have{font-size:.82rem;color:var(--cool);margin:.15rem 0}
   .rc-side{font-size:.8rem;color:var(--muted);margin:.2rem 0}
   .rc-actions{display:flex;gap:.5rem;margin-top:.75rem}
   .rc-accept{flex:1;font:inherit;font-weight:800;font-size:.95rem;padding:.6rem;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
@@ -207,17 +234,22 @@
   .rc-recipe-btn{font:inherit;font-weight:700;font-size:.9rem;padding:.6rem 1rem;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--ink-soft);cursor:pointer;white-space:nowrap}
   .rc-recipe-btn[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent);border-color:transparent}
   .rc-chosen{flex:1;align-self:center;font-size:.92rem;font-weight:800;color:var(--accent)}
+  .rc-decided-tag{font-size:.72rem;font-weight:800;letter-spacing:.04em;color:var(--accent);background:var(--accent-soft);padding:.16rem .55rem;border-radius:999px;display:inline-block;margin-bottom:.2rem}
+  .rc-redo{flex:1;font:inherit;font-weight:800;font-size:.95rem;padding:.6rem;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--ink-soft);cursor:pointer}
   .rc-recipe{margin-top:.7rem;white-space:pre-wrap;word-break:break-word;font-size:1.02rem;line-height:1.65;background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:.85rem}
 
   /* 장보기 */
   .shop-count{font-size:.85rem;color:var(--muted);margin-bottom:.6rem;font-weight:700}
   .shop-list{display:flex;flex-direction:column;gap:.4rem}
   .shop-item{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;font:inherit;background:var(--raised);border:1px solid var(--line);border-radius:11px;padding:.7rem .85rem;cursor:pointer;-webkit-tap-highlight-color:transparent}
-  .shop-item .chk{font-size:1.15rem;color:var(--muted);line-height:1}
-  .shop-item .snm{font-weight:650;font-size:1rem;flex:1}
+  .shop-item .sinfo{flex:1;display:flex;flex-direction:column;gap:.1rem;align-items:flex-start;min-width:0}
+  .shop-item .snm{font-weight:650;font-size:1rem}
   .shop-item .srsn{font-size:.72rem;color:var(--muted)}
-  .shop-item.got{opacity:.5}
+  .shop-item .chk{font-size:1.4rem;color:var(--muted);line-height:1;flex-shrink:0}
+  .shop-item.got{opacity:.55}
   .shop-item.got .snm{text-decoration:line-through}
+  .shop-item.got .chk{color:var(--accent)}
+  .shop-divider{font-size:.74rem;font-weight:800;color:var(--muted);letter-spacing:.04em;margin:.6rem 0 .05rem;padding-left:.2rem}
 
   :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
@@ -229,8 +261,8 @@
   <div class="head-inner">
     <div class="tabs" role="tablist" style="flex:1">
       <button role="tab" aria-selected="true" data-view="recommend">오늘의저녁</button>
-      <button role="tab" aria-selected="false" data-view="input">식재료</button>
       <button role="tab" aria-selected="false" data-view="recipe">레시피</button>
+      <button role="tab" aria-selected="false" data-view="input">식재료</button>
       <button role="tab" aria-selected="false" data-view="shop">장보기</button>
       <button role="tab" aria-selected="false" data-view="stock">냉장고</button>
     </div>
@@ -269,22 +301,25 @@
     </div>
   </section>
 
-  <!-- 재고 -->
+  <!-- 재고 (역할 인덱스 · 칸마다 카드 · 보관 배지) -->
   <section class="view hidden" id="view-stock">
-    <div class="stotabs" id="stotabs">
-      <button aria-selected="true" data-s="냉장">냉장</button>
-      <button aria-selected="false" data-s="냉동">냉동</button>
-      <button aria-selected="false" data-s="실온">실온</button>
-    </div>
+    <div class="rolefilter" id="roleFilter"></div>
     <div class="invlist" id="invlist"></div>
   </section>
 
-  <!-- 레시피 -->
+  <!-- 레시피 (목록만 — 추가 폼은 별도 페이지 view-recipe-add) -->
   <section class="view hidden" id="view-recipe">
+    <div class="rec-cats" id="recCats"></div>
+    <div class="menu-list" id="menuList"><div class="empty">불러오는 중…</div></div>
     <div class="rec-top" id="recTop">
       <button class="menu-add-btn" id="menuAddBtn" type="button">+ 레시피 추가</button>
     </div>
-    <div class="menu-form hidden" id="menuForm">
+    <div class="recipe-detail hidden" id="recipeDetail"></div>
+  </section>
+
+  <!-- 레시피 추가 (별도 페이지) -->
+  <section class="view hidden" id="view-recipe-add">
+    <div class="menu-form" id="menuForm">
       <div class="mf-head"><button class="mf-back" type="button" id="mfBack">‹ 목록</button><b>레시피 추가</b></div>
       <input id="mfName" type="text" placeholder="메뉴 이름 (예: 계란찜)" autocomplete="off">
       <div class="mf-row">
@@ -298,9 +333,6 @@
         <button class="mf-cancel" id="mfCancel" type="button">취소</button>
       </div>
     </div>
-    <div class="rec-cats" id="recCats"></div>
-    <div class="menu-list" id="menuList"><div class="empty">불러오는 중…</div></div>
-    <div class="recipe-detail hidden" id="recipeDetail"></div>
   </section>
 
   <!-- 장보기 (파생 뷰: 없음 재료 ∪ 오늘 수락 카드 사올것) -->
@@ -503,7 +535,7 @@
     {n:"다진생강",s:"냉장",m:"상비",c:"소스·양념",a:["생강다진것","생강술"]},
     {n:"고춧가루",s:"냉장",m:"상비",c:"소스·양념",a:["고추가루"]},
     // 수산물
-    {n:"오징어",s:"냉장",m:"신선",c:"수산물",a:["반건조오징어"]},
+    {n:"오징어",s:"냉장",m:"신선",c:"수산물",a:["반건조오징어","얼린오징어"]},
     {n:"새우",s:"냉동",m:"신선",c:"수산물",a:["칵테일새우"]},
     {n:"바지락",s:"냉장",m:"신선",c:"수산물"},
     {n:"꼬막",s:"냉장",m:"신선",c:"수산물"},
@@ -610,7 +642,7 @@
 
   // 마스터 재료 분리(멸치→국물용멸치, 치즈→슈레드치즈)에 따른 기존 재고 키 이관
   (function renameInv(){
-    var R={"멸치":"국물용멸치","치즈":"슈레드치즈"};
+    var R={"멸치":"국물용멸치","치즈":"슈레드치즈","얼린오징어":"오징어"};
     var changed=false;
     Object.keys(R).forEach(function(o){
       if(inv[o]){ var nn=R[o]; inv[nn]=inv[nn]||{};
@@ -819,24 +851,54 @@
   }
 
   // ── 재고 렌더 ──
-  var curSto="냉장";
+  // 역할 분류(자동매핑: category→역할). 이름 오버라이드가 우선(수산물 상비류 등 어색한 것 임시 교정).
+  // ⚠ 재료 분류 전면 정리는 나중에 일괄로 — 그때 재료별 role 필드로 승격.
+  var ROLE_ORDER=["주재료","부재료","반찬","간식","양념류","기타"];
+  var CAT_ROLE={"육류":"주재료","수산물":"주재료","채소":"부재료","알류":"부재료","유제품":"부재료","소스·양념":"양념류","김치·절임":"반찬","반찬·조리":"반찬","과일":"간식","냉동식품":"간식"};
+  var NAME_ROLE={"국물용멸치":"기타","다시마":"기타","김":"기타"};
+  function roleOf(name){ var ing=findIng(name), key=ing?ing.n:name; return NAME_ROLE[key]||CAT_ROLE[ing?ing.c:null]||"기타"; }
+  // 재고에 (어느 칸이든) '있음'인지 — 추천 '사올것'이 이미 집에 있는지 판정에 사용
+  function inStock(name){ var ing=findIng(name), key=ing?ing.n:name; return !!(inv[key] && STORAGES.some(function(s){ return inv[key][s] && inv[key][s].status==="있음"; })); }
+  var curRole="전체";
   var invlistEl=document.getElementById("invlist");
+  var roleFilterEl=document.getElementById("roleFilter");
+  function invItemEl(c){
+    var it=document.createElement("div"); it.className="invitem";
+    var left=document.createElement("div"); left.className="col";
+    left.innerHTML='<div class="n">'+esc(c.name)+'</div><span class="sto-badge" data-s="'+esc(c.storage)+'">'+esc(c.storage)+'</span>';
+    var g=document.createElement("button"); g.className="gone"; g.type="button"; g.textContent="소진";
+    g.addEventListener("click",function(){ inv[c.name][c.storage].status="없음"; inv[c.name][c.storage].updated=Date.now(); save(LS_INV,inv); syncWrite([c.name]); renderStock(); toast(c.name+" "+c.storage+" 소진"); });
+    it.appendChild(left); it.appendChild(g);
+    return it;
+  }
+  function gridOf(arr){
+    arr.sort(function(a,b){ return a.name.localeCompare(b.name,"ko")||a.storage.localeCompare(b.storage,"ko"); });
+    var grid=document.createElement("div"); grid.className="invgrid";
+    arr.forEach(function(c){ grid.appendChild(invItemEl(c)); });
+    return grid;
+  }
   function renderStock(){
-    var items=Object.keys(inv).filter(function(k){ return inv[k][curSto] && inv[k][curSto].status==="있음"; });
-    items.sort();
-    invlistEl.innerHTML="";
-    if(items.length===0){ var e=document.createElement("div"); e.className="empty"; e.textContent="아직 없어요. [입력]에서 담아보세요."; invlistEl.appendChild(e); return; }
-    items.forEach(function(k){
-      var it=document.createElement("div"); it.className="invitem";
-      var elsewhere=STORAGES.filter(function(s){ return s!==curSto && inv[k][s] && inv[k][s].status==="있음"; });
-      var also = elsewhere.length? ' · 또: '+elsewhere.join("/") : '';
-      var left=document.createElement("div");
-      left.innerHTML='<div class="n">'+esc(k)+'</div><div class="meta">'+timeAgo(inv[k][curSto].updated)+esc(also)+'</div>';
-      var g=document.createElement("button"); g.className="gone"; g.type="button"; g.textContent="없앰";
-      g.addEventListener("click",function(){ inv[k][curSto].status="없음"; inv[k][curSto].updated=Date.now(); save(LS_INV,inv); syncWrite([k]); renderStock(); toast(k+" ("+curSto+") 없음"); });
-      it.appendChild(left); it.appendChild(g);
-      invlistEl.appendChild(it);
+    invlistEl.innerHTML=""; roleFilterEl.innerHTML="";
+    var cards=[];
+    Object.keys(inv).forEach(function(k){ STORAGES.forEach(function(s){ if(inv[k][s] && inv[k][s].status==="있음") cards.push({name:k,storage:s}); }); });
+    if(!cards.length){ var e=document.createElement("div"); e.className="empty"; e.textContent="아직 없어요. [식재료]에서 담아보세요."; invlistEl.appendChild(e); return; }
+    var byRole={}; cards.forEach(function(c){ var r=roleOf(c.name); (byRole[r]=byRole[r]||[]).push(c); });
+    var present=ROLE_ORDER.filter(function(r){ return byRole[r] && byRole[r].length; });
+    // 역할 인덱스 + 맨 뒤 '전체'
+    if(present.indexOf(curRole)<0 && curRole!=="전체") curRole="전체";
+    present.concat(["전체"]).forEach(function(r){
+      var b=document.createElement("button"); b.type="button"; b.textContent=r+(r!=="전체"?" "+byRole[r].length:""); b.setAttribute("aria-selected", r===curRole?"true":"false");
+      b.addEventListener("click",function(){ curRole=r; renderStock(); });
+      roleFilterEl.appendChild(b);
     });
+    if(curRole==="전체"){
+      present.forEach(function(role){
+        var h=document.createElement("div"); h.className="invsec-h"; h.textContent=role+" ("+byRole[role].length+")"; invlistEl.appendChild(h);
+        invlistEl.appendChild(gridOf(byRole[role]));
+      });
+    } else {
+      invlistEl.appendChild(gridOf(byRole[curRole]));
+    }
   }
   function timeAgo(t){ if(!t)return""; var d=Math.floor((Date.now()-t)/86400000); return d<=0?"오늘":d+"일 전"; }
 
@@ -853,8 +915,7 @@
     var listEl=document.getElementById("menuList"), catsEl=document.getElementById("recCats"), detEl=document.getElementById("recipeDetail");
     detEl.classList.add("hidden"); listEl.classList.remove("hidden"); catsEl.classList.remove("hidden");
     document.getElementById("recTop").classList.remove("hidden");
-    document.getElementById("menuForm").classList.add("hidden");
-    if(!menusCache || !menusCache.length){ listEl.innerHTML='<div class="empty">아직 레시피가 없어요. 위 “+ 레시피 추가”로 넣어보세요.</div>'; catsEl.innerHTML=""; return; }
+    if(!menusCache || !menusCache.length){ listEl.innerHTML='<div class="empty">아직 레시피가 없어요. 아래 “+ 레시피 추가”로 넣어보세요.</div>'; catsEl.innerHTML=""; return; }
     var present={}; menusCache.forEach(function(m){ present[m.category]=true; });
     var cats=["전체"];
     REC_CAT_ORDER.forEach(function(c){ if(present[c]) cats.push(c); });        // 메인·반찬·기타·신규 순
@@ -868,37 +929,32 @@
     var items=menusCache.filter(function(m){ return recCat==="전체"||m.category===recCat; });
     listEl.innerHTML="";
     items.forEach(function(m){
+      var wrap=document.createElement("div"); wrap.className="menu-row";
       var b=document.createElement("button"); b.className="menu-item"; b.type="button";
       b.innerHTML='<span><span class="mn">'+esc(m.name)+'</span><span class="mc">'+esc(m.category)+(m.base_servings?" · "+esc(m.base_servings):"")+'</span></span><span class="arw">›</span>';
-      b.addEventListener("click",function(){ showRecipe(m); });
-      listEl.appendChild(b);
+      var det=document.createElement("div"); det.className="menu-detail hidden";
+      det.innerHTML='<div class="md-body">'+esc(m.recipe_text||"(레시피 본문 없음)")+'</div>'+(m.recipe_url?'<a class="rurl" href="'+esc(m.recipe_url)+'" target="_blank" rel="noopener">원문 보기 ↗</a>':'');
+      b.addEventListener("click",function(){ var hid=det.classList.toggle("hidden"); b.classList.toggle("open",!hid); if(!hid) det.scrollIntoView({block:"nearest",behavior:"smooth"}); });
+      wrap.appendChild(b); wrap.appendChild(det);
+      listEl.appendChild(wrap);
     });
-  }
-  function showRecipe(m){
-    var listEl=document.getElementById("menuList"), catsEl=document.getElementById("recCats"), detEl=document.getElementById("recipeDetail");
-    listEl.classList.add("hidden"); catsEl.classList.add("hidden"); detEl.classList.remove("hidden");
-    document.getElementById("recTop").classList.add("hidden"); document.getElementById("menuForm").classList.add("hidden");
-    var url = m.recipe_url ? '<a class="rurl" href="'+esc(m.recipe_url)+'" target="_blank" rel="noopener">원문 보기 ↗</a>' : '';
-    detEl.innerHTML='<button class="rback" type="button" id="rback">‹ 목록</button>'+
-      '<h2>'+esc(m.name)+'</h2><div class="rmeta">'+esc(m.category)+(m.base_servings?" · "+esc(m.base_servings):"")+'</div>'+
-      '<pre>'+esc(m.recipe_text||"(레시피 본문 없음)")+'</pre>'+url;
-    document.getElementById("rback").addEventListener("click",renderMenus);
-    window.scrollTo(0,0);
   }
   // 레시피 추가 (Supabase menus에 저장 → 온라인 반영, 다른 폰도 공유)
   // 목록 위 버튼 → 별도 폼 페이지로 전환 (목록/분류/상세를 덮음). 저장·취소·뒤로 시 목록으로 복귀.
-  function showMenuForm(){
-    document.getElementById("menuList").classList.add("hidden");
-    document.getElementById("recCats").classList.add("hidden");
-    document.getElementById("recipeDetail").classList.add("hidden");
-    document.getElementById("recTop").classList.add("hidden");
-    document.getElementById("menuForm").classList.remove("hidden");
+  function showRecipeAdd(){
+    document.getElementById("view-recipe").classList.add("hidden");
+    document.getElementById("view-recipe-add").classList.remove("hidden");
     document.getElementById("mfName").focus();
     window.scrollTo(0,0);
   }
-  document.getElementById("menuAddBtn").addEventListener("click",showMenuForm);
-  document.getElementById("mfCancel").addEventListener("click",renderMenus);
-  document.getElementById("mfBack").addEventListener("click",renderMenus);
+  function backToRecipeList(){
+    document.getElementById("view-recipe-add").classList.add("hidden");
+    document.getElementById("view-recipe").classList.remove("hidden");
+    loadMenus(); window.scrollTo(0,0);
+  }
+  document.getElementById("menuAddBtn").addEventListener("click",showRecipeAdd);
+  document.getElementById("mfCancel").addEventListener("click",backToRecipeList);
+  document.getElementById("mfBack").addEventListener("click",backToRecipeList);
   document.getElementById("mfSave").addEventListener("click",function(){
     var name=document.getElementById("mfName").value.trim();
     if(!name){ toast("메뉴 이름을 입력하세요"); return; }
@@ -910,9 +966,8 @@
     sbFetch("POST","/menus?on_conflict=household_id,name",[row],{Prefer:"resolution=merge-duplicates,return=minimal"})
       .then(function(){
         btn.disabled=false; menusCache=null;
-        document.getElementById("menuForm").classList.add("hidden");
         ["mfName","mfServ","mfText","mfUrl"].forEach(function(id){ document.getElementById(id).value=""; });
-        toast("레시피 저장됨 ✓"); loadMenus();
+        toast("레시피 저장됨 ✓"); backToRecipeList();
       })
       .catch(function(){ btn.disabled=false; toast("저장 실패 — 연결을 확인하세요"); });
   });
@@ -926,8 +981,7 @@
     var c=load(LS_REC,null);
     if(c && c.date===recToday() && c.cards && c.cards.length){
       document.getElementById("recGo").textContent="🔄 다시 추천";
-      document.getElementById("recSub").textContent="오늘 받은 추천이에요 (다시 받으려면 위 버튼)";
-      renderRecCards(c.cards, c.status||{});
+      renderRecCards(c.cards, c);
       return;
     }
     if(auto) fetchRec();
@@ -943,73 +997,106 @@
         if(j.refused){ sub.textContent="추천을 만들지 못했어요. 다시 시도해보세요."; return; }
         var cards=j.cards||[];
         if(!cards.length){ sub.textContent="추천이 비어서 왔어요. 다시 시도해보세요."; return; }
-        save(LS_REC,{date:recToday(),cards:cards,status:{}});
-        go.textContent="🔄 다시 추천"; sub.textContent="오늘 추천 "+cards.length+"개 — 마음에 드는 걸 골라요";
-        renderRecCards(cards,{});
+        save(LS_REC,{date:recToday(),cards:cards,status:{},chosen:null,used:[]});
+        go.textContent="🔄 다시 추천";
+        renderRecFromCache();
       })
       .catch(function(e){ go.disabled=false; sub.textContent="네트워크 오류: "+e.message; });
   }
   function saveRecStatus(idx,st){ var c=load(LS_REC,null); if(!c)return; c.status=c.status||{}; c.status[idx]=st; save(LS_REC,c); }
-  function renderRecFromCache(){ var c=load(LS_REC,null); if(c&&c.cards) renderRecCards(c.cards, c.status||{}); }
-  function renderRecCards(cards,status){
+  function renderRecFromCache(){ var c=load(LS_REC,null); if(c&&c.cards) renderRecCards(c.cards, c); }
+  function uniq(a){ var o=[],seen={}; a.forEach(function(x){ if(!seen[x]){seen[x]=1;o.push(x);} }); return o; }
+  // 레시피 토글 버튼 (열고 닫기 — 되돌아오기)
+  function makeRecipeBtn(recipe){
+    var b=document.createElement("button"); b.className="rc-recipe-btn"; b.type="button";
+    b.textContent="레시피"; b.setAttribute("aria-expanded","false");
+    b.addEventListener("click",function(){
+      var hidden=recipe.classList.toggle("hidden");
+      b.textContent=hidden?"레시피":"레시피 닫기"; b.setAttribute("aria-expanded",hidden?"false":"true");
+    });
+    return b;
+  }
+  function cardShell(c){
+    var card=document.createElement("div"); card.className="rcard";
+    // 사올것 중 이미 집에 있는 건 빼고 표시 (재고가 진실 — AI 제안을 앱이 덮음)
+    var need=[], have=[];
+    (c.사올것||[]).forEach(function(nm){ (inStock(nm)?have:need).push(nm); });
+    var buy = need.length
+      ? '<div class="rc-buy">🛒 <b>사올 것:</b> '+esc(need.join(", "))+'</div>'
+      : '<div class="rc-buy none">🛒 '+((c.사올것&&c.사올것.length)?'다 냉장고에 있어요 — 살 것 없음':'살 것 없음 — 냉장고로 충분')+'</div>';
+    var haveNote = have.length ? '<div class="rc-have">🧊 집에 있음 (안 사도 됨): '+esc(have.join(", "))+'</div>' : '';
+    var side=(c.반찬&&c.반찬.length)?'<div class="rc-side">곁들임: '+esc(c.반찬.join(" · "))+'</div>':'';
+    card.innerHTML='<span class="rc-type">'+esc(c.형태)+'</span><h3>'+esc(c.이름)+'</h3>'+buy+haveNote+side;
+    var recipe=document.createElement("div"); recipe.className="rc-recipe hidden";
+    recipe.textContent=(c.레시피||[]).join("\n")||"(레시피 없음)";
+    return {card:card, recipe:recipe};
+  }
+  // 단일선택: chosen이 있으면 그 한 상만 확정 표시, 없으면 후보 카드들
+  function renderRecCards(cards, cache){
+    cache=cache||{}; var status=cache.status||{}; var chosen=(cache.chosen==null?-1:cache.chosen);
     var el=document.getElementById("recCards"); el.innerHTML="";
-    cards.forEach(function(c,idx){
-      var st=status[idx];
-      var card=document.createElement("div"); card.className="rcard"+(st==="거절"?" gone":"")+(st==="수락"?" accepted":"");
-      var buy=(c.사올것&&c.사올것.length)
-        ? '<div class="rc-buy">🛒 <b>사올 것:</b> '+esc(c.사올것.join(", "))+'</div>'
-        : '<div class="rc-buy none">🛒 살 것 없음 — 냉장고로 충분</div>';
-      var side=(c.반찬&&c.반찬.length)?'<div class="rc-side">곁들임: '+esc(c.반찬.join(" · "))+'</div>':'';
-      card.innerHTML='<span class="rc-type">'+esc(c.형태)+'</span><h3>'+esc(c.이름)+'</h3>'+buy+side;
-
-      // 레시피 블록 — 기본 숨김, [레시피] 버튼으로 열고 닫음 (되돌아오기)
-      var recipe=document.createElement("div"); recipe.className="rc-recipe hidden";
-      recipe.textContent=(c.레시피||[]).join("\n")||"(레시피 없음)";
-
+    var sub=document.getElementById("recSub");
+    if(chosen>=0 && cards[chosen]){
+      var cc=cards[chosen], sh=cardShell(cc), card=sh.card, recipe=sh.recipe;
+      card.className="rcard accepted";
+      var tag=document.createElement("div"); tag.className="rc-decided-tag"; tag.textContent="✓ 오늘의 저녁 확정";
+      card.insertBefore(tag, card.firstChild);
       var acts=document.createElement("div"); acts.className="rc-actions";
-      function recipeBtn(){
-        var b=document.createElement("button"); b.className="rc-recipe-btn"; b.type="button";
-        b.textContent="레시피"; b.setAttribute("aria-expanded","false");
-        b.addEventListener("click",function(){
-          var hidden=recipe.classList.toggle("hidden");
-          b.textContent=hidden?"레시피":"레시피 닫기"; b.setAttribute("aria-expanded",hidden?"false":"true");
-        });
-        return b;
-      }
-      if(st==="수락"){
-        var badge=document.createElement("span"); badge.className="rc-chosen";
-        badge.textContent=(c.사올것&&c.사올것.length)?"✓ 선택됨 · 장보기에 담김":"✓ 선택됨";
-        acts.appendChild(badge); acts.appendChild(recipeBtn());
-      } else if(st==="거절"){
+      var redo=document.createElement("button"); redo.className="rc-redo"; redo.type="button"; redo.textContent="메뉴 다시 선택하기";
+      redo.addEventListener("click",reChoose);
+      acts.appendChild(redo); acts.appendChild(makeRecipeBtn(recipe));
+      card.appendChild(acts); card.appendChild(recipe); el.appendChild(card);
+      if(sub) sub.textContent="오늘 저녁이 정해졌어요 — 바꾸려면 ‘메뉴 다시 선택하기’";
+      return;
+    }
+    if(sub && cards.length) sub.textContent="오늘 추천 "+cards.length+"개 — 하나 고르면 오늘 저녁 확정";
+    cards.forEach(function(c,idx){
+      var st=status[idx], sh=cardShell(c), card=sh.card, recipe=sh.recipe;
+      if(st==="거절") card.className="rcard gone";
+      var acts=document.createElement("div"); acts.className="rc-actions";
+      if(st==="거절"){
         var back=document.createElement("button"); back.className="rc-reject"; back.type="button"; back.textContent="되돌리기";
         back.addEventListener("click",function(){ saveRecStatus(idx,null); renderRecFromCache(); });
-        acts.appendChild(back); acts.appendChild(recipeBtn());
+        acts.appendChild(back); acts.appendChild(makeRecipeBtn(recipe));
       } else {
         var acc=document.createElement("button"); acc.className="rc-accept"; acc.type="button"; acc.textContent="선택";
         acc.addEventListener("click",function(){ acceptRec(c,idx); });
         var rej=document.createElement("button"); rej.className="rc-reject"; rej.type="button"; rej.textContent="패스";
         rej.addEventListener("click",function(){ saveRecStatus(idx,"거절"); renderRecFromCache(); });
-        acts.appendChild(acc); acts.appendChild(rej); acts.appendChild(recipeBtn());
+        acts.appendChild(acc); acts.appendChild(rej); acts.appendChild(makeRecipeBtn(recipe));
       }
-      card.appendChild(acts); card.appendChild(recipe);
-      el.appendChild(card);
+      card.appendChild(acts); card.appendChild(recipe); el.appendChild(card);
     });
   }
   function acceptRec(c,idx){
-    saveRecStatus(idx,"수락");
-    // 차감: '쓰는재고' 중 신선재료를 없음 처리 (상비는 안 깎음 — v8 §2)
+    // 차감: '쓰는재고' 중 신선재료를 없음 처리 (상비는 안 깎음 — v8 §2). 되돌리기 위해 칸까지 기록.
     var used=[];
     (c.쓰는재고||[]).forEach(function(nm){
       var ing=findIng(nm);
       if(ing && ing.m==="신선" && inv[nm]){
-        Object.keys(inv[nm]).forEach(function(sT){ if(inv[nm][sT].status==="있음"){ inv[nm][sT].status="없음"; inv[nm][sT].updated=Date.now(); } });
-        used.push(nm);
+        Object.keys(inv[nm]).forEach(function(sT){ if(inv[nm][sT].status==="있음"){ inv[nm][sT].status="없음"; inv[nm][sT].updated=Date.now(); used.push({n:nm,s:sT}); } });
       }
     });
-    if(used.length){ save(LS_INV,inv); syncWrite(used); renderStock(); }
-    renderRecFromCache();   // 선택 상태로 다시 그림 (장보기는 computeShop이 수락 카드에서 자동 반영)
+    if(used.length){ save(LS_INV,inv); syncWrite(uniq(used.map(function(u){return u.n;}))); renderStock(); }
+    var cch=load(LS_REC,null); if(cch){ cch.chosen=idx; cch.used=used; save(LS_REC,cch); }
+    renderRecFromCache();
+    window.scrollTo({top:0,behavior:"smooth"});
     var addN=(c.사올것||[]).length;
-    toast("'"+c.이름+"' 선택 ✓"+(addN?" · 장보기 "+addN+"개":"")+(used.length?" · "+used.length+"개 차감":""));
+    toast("‘"+c.이름+"’ 오늘 저녁 확정 ✓"+(addN?" · 장보기 "+addN+"개":"")+(used.length?" · "+used.length+"칸 차감":""));
+  }
+  // 확정 취소 — 차감했던 신선재료를 되살리고 후보 목록으로 복귀
+  function reChoose(){
+    var cch=load(LS_REC,null); if(!cch) return;
+    var restored=[];
+    (cch.used||[]).forEach(function(u){
+      inv[u.n]=inv[u.n]||{};
+      inv[u.n][u.s]={status:"있음",updated:Date.now(),src:(inv[u.n][u.s]&&inv[u.n][u.s].src)||"공유"};
+      restored.push(u.n);
+    });
+    if(restored.length){ save(LS_INV,inv); syncWrite(uniq(restored)); renderStock(); }
+    cch.chosen=null; cch.used=[]; save(LS_REC,cch);
+    renderRecFromCache();
+    toast("메뉴 다시 선택"+(restored.length?" · "+restored.length+"칸 복구":""));
   }
   document.getElementById("recGo").addEventListener("click",fetchRec);
 
@@ -1024,26 +1111,44 @@
       STORAGES.forEach(function(s){ if(b[s]){ if(b[s].status==="있음")any있=true; else any없=true; } });
       if(any없 && !any있) add(k,"떨어짐");
     });
-    // 2) 오늘 수락한 카드의 사올것
+    // 2) 오늘 확정한 메뉴의 사올것 (단일선택)
     var c=load(LS_REC,null);
-    if(c && c.date===recToday() && c.cards){
-      var stt=c.status||{};
-      c.cards.forEach(function(card,idx){ if(stt[idx]==="수락"){ (card.사올것||[]).forEach(function(nm){ add(nm,"오늘 메뉴"); }); } });
+    if(c && c.date===recToday() && c.cards && c.chosen!=null && c.cards[c.chosen]){
+      (c.cards[c.chosen].사올것||[]).forEach(function(nm){ if(!inStock(nm)) add(nm,"오늘 메뉴"); });
     }
     return Object.keys(items).map(function(k){ return items[k]; }).sort(function(a,b){ return a.name.localeCompare(b.name,"ko"); });
+  }
+  function shopHeadHTML(items){
+    var t=items.filter(function(x){return !shopChecked[x.name];}).length, d=items.length-t;
+    return items.length ? '<div class="shop-count">살 것 '+t+'개'+(d?' · 구매함 '+d:'')+'</div>' : '';
   }
   function renderShop(){
     var head=document.getElementById("shopHead"), listEl=document.getElementById("shopList");
     var items=computeShop();
-    head.innerHTML = items.length ? '<div class="shop-count">살 것 '+items.length+'개 — 사면 탭해서 지워요</div>' : '';
+    head.innerHTML = shopHeadHTML(items);
     listEl.innerHTML="";
     if(!items.length){ listEl.innerHTML='<div class="empty">지금 살 게 없어요. 재료가 떨어지거나 오늘의저녁을 고르면 여기 모여요.</div>'; return; }
-    items.forEach(function(it){
-      var row=document.createElement("button"); row.type="button"; row.className="shop-item"+(shopChecked[it.name]?" got":"");
-      row.innerHTML='<span class="chk">'+(shopChecked[it.name]?"☑":"☐")+'</span><span class="snm">'+esc(it.name)+'</span><span class="srsn">'+esc(it.reasons.join(" · "))+'</span>';
-      row.addEventListener("click",function(){ shopChecked[it.name]=!shopChecked[it.name]; renderShop(); });
-      listEl.appendChild(row);
-    });
+    // 구매란(오른쪽) 체크 → 그 자리에서 표시만 바뀜. 재정렬(구매함으로 정리)은 화면 다시 열 때.
+    function makeRow(it){
+      var on=!!shopChecked[it.name];
+      var row=document.createElement("button"); row.type="button"; row.className="shop-item"+(on?" got":"");
+      row.innerHTML='<span class="sinfo"><span class="snm">'+esc(it.name)+'</span><span class="srsn">'+esc(it.reasons.join(" · "))+'</span></span><span class="chk">'+(on?"☑":"☐")+'</span>';
+      row.addEventListener("click",function(){
+        var nv=!shopChecked[it.name]; shopChecked[it.name]=nv;
+        row.classList.toggle("got",nv);
+        row.querySelector(".chk").textContent=nv?"☑":"☐";
+        head.innerHTML=shopHeadHTML(items);
+      });
+      return row;
+    }
+    var todo=items.filter(function(it){ return !shopChecked[it.name]; });
+    var done=items.filter(function(it){ return shopChecked[it.name]; });
+    todo.forEach(function(it){ listEl.appendChild(makeRow(it)); });
+    if(done.length){
+      var div=document.createElement("div"); div.className="shop-divider"; div.textContent="구매함 "+done.length;
+      listEl.appendChild(div);
+      done.forEach(function(it){ listEl.appendChild(makeRow(it)); });
+    }
   }
 
   // ── 탭 전환 ──
@@ -1057,11 +1162,6 @@
     if(v==="recipe") loadMenus();
     if(v==="shop") renderShop();
     if(v==="recommend") loadRecCache(false);
-  });
-  document.getElementById("stotabs").addEventListener("click",function(e){
-    var b=e.target.closest("button"); if(!b)return;
-    Array.prototype.forEach.call(this.querySelectorAll("button"),function(x){x.setAttribute("aria-selected",x===b?"true":"false");});
-    curSto=b.dataset.s; renderStock();
   });
 
   // ── 텍스트/추가 입력 ──
