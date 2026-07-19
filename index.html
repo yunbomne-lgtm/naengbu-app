@@ -13,7 +13,8 @@
      v0.25: 장보기 항목마다 ✕(빼기) 버튼 — 다시 살 생각 없는 없음재료(예: 갓김치)를 목록에서 제거. shopDismissed 로컬 저장, 재입고(있음)되면 자동 해제. 행 구조를 [구매토글 sbuy]+[빼기 sdel]로 분리.
      v0.26: 장보기 상단 요리중 메모 입력 — "쌀 떨어졌어"→재고 없음(공유)·"계란 부족해"→로컬 수동항목. parseNeed(떨어짐/부족/필요 감지+마스터 표준명). shopManual 저장, 재입고 시 자동 해제. ✕는 수동항목이면 목록에서만 제거. 행에 '구매'(체크 앞)·'삭제'(✕ 앞) 라벨.
      v0.27: 실제 레시피 우선(트랙 B). 추천 카드 메인이 recipe_text 보유 메뉴면 저장된 진짜 레시피를 그대로 표시(c.메인레시피/출처/원문링크, AI 생성 대신)+'🍳검증 레시피' 배지. 함수가 recipe_text 보유 메뉴를 프롬프트에서 우선+응답 후 대체. 레시피 탭 상세에 출처 표시, 추가폼에 출처(mfSource) 입력칸. menus.source 컬럼.
-     v0.28: 레시피 탭 상단 검색창(recSearch) — 이름·본문·출처 클라이언트 즉석 필터(116+개도 즉시, 인덱스 불필요). 검색 중엔 분류칩 숨김+'N개 찾음' 표시, ✕로 지움. -->
+     v0.28: 레시피 탭 상단 검색창(recSearch) — 이름·본문·출처 클라이언트 즉석 필터(116+개도 즉시, 인덱스 불필요). 검색 중엔 분류칩 숨김+'N개 찾음' 표시, ✕로 지움.
+     v0.29: 원문 링크가 유튜브면 ▶유튜브 아이콘+'유튜브 바로가기'로 표시(srcLinkHTML/isYT), 아니면 '원문 보기 ↗'. 레시피 탭 상세·추천 카드 rc-src 공용. -->
 <title>윤봄네 냉장고 — 입력</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
@@ -200,6 +201,10 @@
   .menu-detail .md-src{font-size:.8rem;font-weight:700;color:var(--cool);margin-bottom:.5rem}
   .menu-detail .md-body{white-space:pre-wrap;word-break:break-word;font-size:1.05rem;line-height:1.7}
   .menu-detail .rurl{display:inline-block;margin-top:.7rem;font-size:.86rem;color:var(--cold);text-decoration:underline}
+  .ytlink{display:inline-flex;align-items:center;gap:.3rem;font-size:.86rem;font-weight:700;color:#e00;text-decoration:none;margin-top:.6rem}
+  .menu-detail .ytlink{margin-top:.7rem}
+  .rc-src .ytlink{font-size:inherit;margin-top:0}
+  .yt-ico{width:1.25em;height:1.25em;flex-shrink:0}
   .rec-top{display:flex;justify-content:center;margin:.8rem 0 .3rem}
   .menu-add-btn{font:inherit;font-size:.82rem;font-weight:700;padding:.4rem .85rem;border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);border-radius:999px;cursor:pointer}
   .menu-form{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:.8rem;margin-bottom:.8rem;display:flex;flex-direction:column;gap:.5rem}
@@ -991,6 +996,15 @@
 
   // ── 레시피 (menus) ──
   var menusCache=null, recCat="전체", recQuery="";
+  // 원문 링크: 유튜브면 ▶아이콘+'유튜브 바로가기', 아니면 '원문 보기 ↗'
+  var YT_SVG='<svg class="yt-ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="#f00" d="M23 7.5s-.23-1.6-.93-2.3c-.9-.94-1.9-.94-2.36-1C16.5 3.9 12 3.9 12 3.9s-4.5 0-7.7.3c-.46.06-1.46.06-2.36 1C1.23 5.9 1 7.5 1 7.5S.77 9.4.77 11.3v1.35c0 1.9.23 3.8.23 3.8s.23 1.6.93 2.3c.9.94 2.08.9 2.6 1 1.9.18 8.07.24 8.07.24s4.5 0 7.7-.3c.46-.06 1.46-.06 2.36-1 .7-.7.93-2.3.93-2.3s.23-1.9.23-3.8V11.3c0-1.9-.23-3.8-.23-3.8zM9.75 15.1V8.9l5.85 3.1-5.85 3.1z"/></svg>';
+  function isYT(u){ return /youtube\.com|youtu\.be/i.test(u||""); }
+  function srcLinkHTML(url){
+    if(!url) return "";
+    var u=esc(url);
+    if(isYT(url)) return '<a class="ytlink" href="'+u+'" target="_blank" rel="noopener">'+YT_SVG+'유튜브 바로가기</a>';
+    return '<a class="rurl" href="'+u+'" target="_blank" rel="noopener">원문 보기 ↗</a>';
+  }
   var REC_CAT_ORDER=["메인","반찬","기타"];   // 분류 노출 순서 고정
   function loadMenus(){
     if(menusCache){ renderMenus(); return; }
@@ -1032,7 +1046,7 @@
       b.innerHTML='<span><span class="mn">'+esc(m.name)+'</span><span class="mc">'+esc(m.category)+(m.base_servings?" · "+esc(m.base_servings):"")+'</span></span><span class="arw">›</span>';
       var det=document.createElement("div"); det.className="menu-detail hidden";
       var srcLine=m.source?'<div class="md-src">🍳 '+esc(m.source)+'</div>':'';
-      det.innerHTML=srcLine+'<div class="md-body">'+esc(m.recipe_text||"(레시피 본문 없음)")+'</div>'+(m.recipe_url?'<a class="rurl" href="'+esc(m.recipe_url)+'" target="_blank" rel="noopener">원문 보기 ↗</a>':'');
+      det.innerHTML=srcLine+'<div class="md-body">'+esc(m.recipe_text||"(레시피 본문 없음)")+'</div>'+srcLinkHTML(m.recipe_url);
       b.addEventListener("click",function(){ var hid=det.classList.toggle("hidden"); b.classList.toggle("open",!hid); if(!hid) det.scrollIntoView({block:"nearest",behavior:"smooth"}); });
       wrap.appendChild(b); wrap.appendChild(det);
       listEl.appendChild(wrap);
@@ -1176,7 +1190,7 @@
       var box=document.createElement("div"); box.className="rc-dish";
       var h=document.createElement("div"); h.className="rc-dish-name"; h.textContent=c.메인||c.이름||"메인"; box.appendChild(h);
       var src=document.createElement("div"); src.className="rc-src";
-      src.innerHTML='🍳 우리집 검증 레시피'+(c.출처?' · '+esc(c.출처):'')+(c.기준인분?' · 기준 '+esc(c.기준인분):'')+(c.원문링크?' · <a href="'+esc(c.원문링크)+'" target="_blank" rel="noopener">원문 ↗</a>':'');
+      src.innerHTML='🍳 우리집 검증 레시피'+(c.출처?' · '+esc(c.출처):'')+(c.기준인분?' · 기준 '+esc(c.기준인분):'')+(c.원문링크?' · '+srcLinkHTML(c.원문링크):'');
       box.appendChild(src);
       var body=document.createElement("div"); body.className="rc-real"; body.textContent=c.메인레시피; box.appendChild(body);
       wrap.appendChild(box);
