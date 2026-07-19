@@ -11,7 +11,8 @@
      v0.23: 추천 카드 레시피 구조화 — 메인 레시피 먼저 펼쳐 보이고 반찬은 각자 토글로 아래 확장. 레시피=재료+조리과정만(플레이팅/상차림 서술 배제). 추천 함수 출력 스키마를 메뉴별 요리(메인1+반찬N)로 변경(api/recommend.js). 구버전 캐시(플랫 레시피)는 plain 폴백.
      v0.24: 저녁 먹은 기록(meal_logs, 트랙 A). 오늘의저녁 하단에 자연어 입력("김치찌개 먹었어"/"외식했어 스파게티")→파싱→컨펌→기록. 추천 '확정' 시 자동 기록(source=확정, 취소 시 철회). 최근 7개 기록 표시·삭제. 실시간 공유. 추천 함수가 최근1주 제외+최근4주 빈도 신호를 프롬프트에 주입.
      v0.25: 장보기 항목마다 ✕(빼기) 버튼 — 다시 살 생각 없는 없음재료(예: 갓김치)를 목록에서 제거. shopDismissed 로컬 저장, 재입고(있음)되면 자동 해제. 행 구조를 [구매토글 sbuy]+[빼기 sdel]로 분리.
-     v0.26: 장보기 상단 요리중 메모 입력 — "쌀 떨어졌어"→재고 없음(공유)·"계란 부족해"→로컬 수동항목. parseNeed(떨어짐/부족/필요 감지+마스터 표준명). shopManual 저장, 재입고 시 자동 해제. ✕는 수동항목이면 목록에서만 제거. 행에 '구매'(체크 앞)·'삭제'(✕ 앞) 라벨. -->
+     v0.26: 장보기 상단 요리중 메모 입력 — "쌀 떨어졌어"→재고 없음(공유)·"계란 부족해"→로컬 수동항목. parseNeed(떨어짐/부족/필요 감지+마스터 표준명). shopManual 저장, 재입고 시 자동 해제. ✕는 수동항목이면 목록에서만 제거. 행에 '구매'(체크 앞)·'삭제'(✕ 앞) 라벨.
+     v0.27: 실제 레시피 우선(트랙 B). 추천 카드 메인이 recipe_text 보유 메뉴면 저장된 진짜 레시피를 그대로 표시(c.메인레시피/출처/원문링크, AI 생성 대신)+'🍳검증 레시피' 배지. 함수가 recipe_text 보유 메뉴를 프롬프트에서 우선+응답 후 대체. 레시피 탭 상세에 출처 표시, 추가폼에 출처(mfSource) 입력칸. menus.source 컬럼. -->
 <title>윤봄네 냉장고 — 입력</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
@@ -188,6 +189,7 @@
   .menu-item .arw{color:var(--muted);font-size:1.2rem;line-height:1;transition:transform .15s}
   .menu-item.open .arw{transform:rotate(90deg)}
   .menu-detail{background:var(--raised);border:1px solid var(--line);border-radius:11px;margin-top:.35rem;padding:.9rem;color:var(--ink)}
+  .menu-detail .md-src{font-size:.8rem;font-weight:700;color:var(--cool);margin-bottom:.5rem}
   .menu-detail .md-body{white-space:pre-wrap;word-break:break-word;font-size:1.05rem;line-height:1.7}
   .menu-detail .rurl{display:inline-block;margin-top:.7rem;font-size:.86rem;color:var(--cold);text-decoration:underline}
   .rec-top{display:flex;justify-content:center;margin:.8rem 0 .3rem}
@@ -254,6 +256,10 @@
   .rc-sub-btn[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent);border-color:transparent}
   .rc-sub-body{margin-top:.5rem}
   .rc-sub-body.hidden{display:none}
+  .rc-src{font-size:.76rem;color:var(--cool);margin:.1rem 0 .55rem}
+  .rc-src a{color:var(--cool);text-decoration:underline}
+  .rc-real{white-space:pre-wrap;word-break:break-word;font-size:1.03rem;line-height:1.62}
+  .rc-verified{font-size:.74rem;font-weight:700;color:var(--cool);margin:.1rem 0 .2rem}
   /* 저녁 먹은 기록 */
   .meal-log{margin-top:1.4rem;padding-top:1rem;border-top:1px solid var(--line)}
   .ml-title{font-size:.98rem;font-weight:800;margin-bottom:.55rem}
@@ -380,6 +386,7 @@
         <input id="mfServ" type="text" placeholder="기준 인분 (선택)" autocomplete="off">
       </div>
       <textarea id="mfText" rows="6" placeholder="레시피 본문 — 재료와 조리 순서를 그대로 적어요"></textarea>
+      <input id="mfSource" type="text" placeholder="출처 — 채널명/사이트명 (예: 꽁블tv, 만개의레시피)" autocomplete="off">
       <input id="mfUrl" type="text" placeholder="원문 링크 (선택)" autocomplete="off">
       <div class="mf-actions">
         <button class="mf-save" id="mfSave" type="button">저장</button>
@@ -978,7 +985,7 @@
   var REC_CAT_ORDER=["메인","반찬","기타"];   // 분류 노출 순서 고정
   function loadMenus(){
     if(menusCache){ renderMenus(); return; }
-    sbFetch("GET","/menus?household_id=eq."+SB_HH+"&select=name,category,base_servings,recipe_text,recipe_url&order=category,name")
+    sbFetch("GET","/menus?household_id=eq."+SB_HH+"&select=name,category,base_servings,recipe_text,recipe_url,source&order=category,name")
       .then(function(rows){ menusCache=rows||[]; renderMenus(); })
       .catch(function(){ document.getElementById("menuList").innerHTML='<div class="empty">레시피를 불러오지 못했어요. 연결을 확인하세요.</div>'; });
   }
@@ -1004,7 +1011,8 @@
       var b=document.createElement("button"); b.className="menu-item"; b.type="button";
       b.innerHTML='<span><span class="mn">'+esc(m.name)+'</span><span class="mc">'+esc(m.category)+(m.base_servings?" · "+esc(m.base_servings):"")+'</span></span><span class="arw">›</span>';
       var det=document.createElement("div"); det.className="menu-detail hidden";
-      det.innerHTML='<div class="md-body">'+esc(m.recipe_text||"(레시피 본문 없음)")+'</div>'+(m.recipe_url?'<a class="rurl" href="'+esc(m.recipe_url)+'" target="_blank" rel="noopener">원문 보기 ↗</a>':'');
+      var srcLine=m.source?'<div class="md-src">🍳 '+esc(m.source)+'</div>':'';
+      det.innerHTML=srcLine+'<div class="md-body">'+esc(m.recipe_text||"(레시피 본문 없음)")+'</div>'+(m.recipe_url?'<a class="rurl" href="'+esc(m.recipe_url)+'" target="_blank" rel="noopener">원문 보기 ↗</a>':'');
       b.addEventListener("click",function(){ var hid=det.classList.toggle("hidden"); b.classList.toggle("open",!hid); if(!hid) det.scrollIntoView({block:"nearest",behavior:"smooth"}); });
       wrap.appendChild(b); wrap.appendChild(det);
       listEl.appendChild(wrap);
@@ -1032,12 +1040,13 @@
     var row={ household_id:SB_HH, name:name, category:document.getElementById("mfCat").value,
       base_servings:document.getElementById("mfServ").value.trim()||null,
       recipe_text:document.getElementById("mfText").value.trim()||null,
+      source:document.getElementById("mfSource").value.trim()||null,
       recipe_url:document.getElementById("mfUrl").value.trim()||null, is_seed:false };
     var btn=document.getElementById("mfSave"); btn.disabled=true;
     sbFetch("POST","/menus?on_conflict=household_id,name",[row],{Prefer:"resolution=merge-duplicates,return=minimal"})
       .then(function(){
         btn.disabled=false; menusCache=null;
-        ["mfName","mfServ","mfText","mfUrl"].forEach(function(id){ document.getElementById(id).value=""; });
+        ["mfName","mfServ","mfText","mfSource","mfUrl"].forEach(function(id){ document.getElementById(id).value=""; });
         toast("레시피 저장됨 ✓"); backToRecipeList();
       })
       .catch(function(){ btn.disabled=false; toast("저장 실패 — 연결을 확인하세요"); });
@@ -1100,7 +1109,8 @@
       : '<div class="rc-buy none">🛒 '+((c.사올것&&c.사올것.length)?'다 냉장고에 있어요 — 살 것 없음':'살 것 없음 — 냉장고로 충분')+'</div>';
     var haveNote = have.length ? '<div class="rc-have">🧊 집에 있음 (안 사도 됨): '+esc(have.join(", "))+'</div>' : '';
     var side=(c.반찬&&c.반찬.length)?'<div class="rc-side">곁들임: '+esc(c.반찬.join(" · "))+'</div>':'';
-    card.innerHTML='<span class="rc-type">'+esc(c.형태)+'</span><h3>'+esc(c.이름)+'</h3>'+buy+haveNote+side;
+    var verified=c.메인레시피?'<div class="rc-verified">🍳 우리집 검증 레시피'+(c.출처?' · '+esc(c.출처):'')+'</div>':'';
+    card.innerHTML='<span class="rc-type">'+esc(c.형태)+'</span><h3>'+esc(c.이름)+'</h3>'+verified+buy+haveNote+side;
     return {card:card, recipe:buildRecipe(c)};
   }
   // 한 요리(재료 목록 + 번호 조리단계)를 DOM으로 — 상차림/플레이팅 서술 없음
@@ -1116,29 +1126,41 @@
     if(ol.children.length) box.appendChild(ol);
     return box;
   }
+  // 반찬 1개를 토글로 (레시피 접혀 있다가 탭하면 펼침)
+  function sideToggle(d){
+    var sd=document.createElement("div"); sd.className="rc-sub-dish";
+    var btn=document.createElement("button"); btn.className="rc-sub-btn"; btn.type="button";
+    btn.setAttribute("aria-expanded","false"); btn.textContent="▸ 반찬 · "+(d.이름||"레시피");
+    var body=document.createElement("div"); body.className="rc-sub-body hidden"; body.appendChild(dishNode(d));
+    btn.addEventListener("click",function(){
+      var hid=body.classList.toggle("hidden");
+      btn.setAttribute("aria-expanded",hid?"false":"true");
+      btn.textContent=(hid?"▸":"▾")+" 반찬 · "+(d.이름||"레시피");
+    });
+    sd.appendChild(btn); sd.appendChild(body); return sd;
+  }
   // 카드 레시피: 메인 먼저 펼쳐 보이고, 반찬은 각자 토글로 아래 확장
+  // 메인에 '우리집 검증 레시피(c.메인레시피)'가 있으면 AI 생성 대신 저장된 원문을 그대로 표시.
   function buildRecipe(c){
     var wrap=document.createElement("div"); wrap.className="rc-recipe hidden";
     var dishes=(c.요리&&c.요리.length)?c.요리:null;
-    if(!dishes){ // 구버전 캐시 호환 (플랫 레시피 배열)
+    var sides=dishes?dishes.filter(function(d){return d.역할==="반찬";}):[];
+    if(c.메인레시피){
+      var box=document.createElement("div"); box.className="rc-dish";
+      var h=document.createElement("div"); h.className="rc-dish-name"; h.textContent=c.메인||c.이름||"메인"; box.appendChild(h);
+      var src=document.createElement("div"); src.className="rc-src";
+      src.innerHTML='🍳 우리집 검증 레시피'+(c.출처?' · '+esc(c.출처):'')+(c.기준인분?' · 기준 '+esc(c.기준인분):'')+(c.원문링크?' · <a href="'+esc(c.원문링크)+'" target="_blank" rel="noopener">원문 ↗</a>':'');
+      box.appendChild(src);
+      var body=document.createElement("div"); body.className="rc-real"; body.textContent=c.메인레시피; box.appendChild(body);
+      wrap.appendChild(box);
+    } else if(dishes){
+      var mains=dishes.filter(function(d){return d.역할!=="반찬";});
+      if(!mains.length && dishes.length){ mains=[dishes[0]]; sides=dishes.slice(1); } // 역할 누락 방어
+      mains.forEach(function(d){ wrap.appendChild(dishNode(d)); });
+    } else { // 구버전 캐시 호환 (플랫 레시피 배열)
       wrap.className="rc-recipe plain hidden"; wrap.textContent=(c.레시피||[]).join("\n")||"(레시피 없음)"; return wrap;
     }
-    var mains=dishes.filter(function(d){return d.역할!=="반찬";});
-    var sides=dishes.filter(function(d){return d.역할==="반찬";});
-    if(!mains.length && dishes.length){ mains=[dishes[0]]; sides=dishes.slice(1); } // 역할 누락 방어
-    mains.forEach(function(d){ wrap.appendChild(dishNode(d)); });
-    sides.forEach(function(d){
-      var sd=document.createElement("div"); sd.className="rc-sub-dish";
-      var btn=document.createElement("button"); btn.className="rc-sub-btn"; btn.type="button";
-      btn.setAttribute("aria-expanded","false"); btn.textContent="▸ 반찬 · "+(d.이름||"레시피");
-      var body=document.createElement("div"); body.className="rc-sub-body hidden"; body.appendChild(dishNode(d));
-      btn.addEventListener("click",function(){
-        var hid=body.classList.toggle("hidden");
-        btn.setAttribute("aria-expanded",hid?"false":"true");
-        btn.textContent=(hid?"▸":"▾")+" 반찬 · "+(d.이름||"레시피");
-      });
-      sd.appendChild(btn); sd.appendChild(body); wrap.appendChild(sd);
-    });
+    sides.forEach(function(d){ wrap.appendChild(sideToggle(d)); });
     return wrap;
   }
   // 단일선택: chosen이 있으면 그 한 상만 확정 표시, 없으면 후보 카드들
