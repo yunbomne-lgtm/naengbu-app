@@ -14,7 +14,8 @@
      v0.26: 장보기 상단 요리중 메모 입력 — "쌀 떨어졌어"→재고 없음(공유)·"계란 부족해"→로컬 수동항목. parseNeed(떨어짐/부족/필요 감지+마스터 표준명). shopManual 저장, 재입고 시 자동 해제. ✕는 수동항목이면 목록에서만 제거. 행에 '구매'(체크 앞)·'삭제'(✕ 앞) 라벨.
      v0.27: 실제 레시피 우선(트랙 B). 추천 카드 메인이 recipe_text 보유 메뉴면 저장된 진짜 레시피를 그대로 표시(c.메인레시피/출처/원문링크, AI 생성 대신)+'🍳검증 레시피' 배지. 함수가 recipe_text 보유 메뉴를 프롬프트에서 우선+응답 후 대체. 레시피 탭 상세에 출처 표시, 추가폼에 출처(mfSource) 입력칸. menus.source 컬럼.
      v0.28: 레시피 탭 상단 검색창(recSearch) — 이름·본문·출처 클라이언트 즉석 필터(116+개도 즉시, 인덱스 불필요). 검색 중엔 분류칩 숨김+'N개 찾음' 표시, ✕로 지움.
-     v0.29: 원문 링크가 유튜브면 ▶유튜브 아이콘+'유튜브 바로가기'로 표시(srcLinkHTML/isYT), 아니면 '원문 보기 ↗'. 레시피 탭 상세·추천 카드 rc-src 공용. -->
+     v0.29: 원문 링크가 유튜브면 ▶유튜브 아이콘+'유튜브 바로가기'로 표시(srcLinkHTML/isYT), 아니면 '원문 보기 ↗'. 레시피 탭 상세·추천 카드 rc-src 공용.
+     v0.30: 홈 화면(view-home) 신설 — 첫 화면=2x2 정사각형 카드(오늘의저녁/레시피창고/식재료채우기/윤봄네냉장고), 카드별 라인아이콘+색. 네비 showView(v,auto) 공용화(탭·홈카드·로고). 홈에선 탭바 숨김(body.home-active). 로고 탭→홈. 부팅 시 홈 먼저(추천 자동생성은 오늘의저녁 진입 시로 이동, 부팅 자동생성 제거). -->
 <title>윤봄네 냉장고 — 입력</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
@@ -75,7 +76,28 @@
     backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
     padding:calc(0.6rem + env(safe-area-inset-top)) 1rem 0.55rem}
   .head-inner{max-width:var(--measure);margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:.5rem}
-  .brand{font-weight:700;letter-spacing:-.01em;font-size:1.05rem}
+  .brand{font-weight:700;letter-spacing:-.01em;font-size:1.05rem;cursor:pointer}
+  /* 홈 (첫 화면 2x2 카드) */
+  body.home-active .tabrow{display:none}
+  .home-greet{text-align:center;font-size:.98rem;color:var(--muted);font-weight:500;margin:.3rem 0 1.3rem}
+  .home-greet b{color:#e2703a;font-weight:700}
+  .home-grid{display:grid;grid-template-columns:1fr 1fr;gap:.9rem}
+  .hcard{position:relative;aspect-ratio:1/1;border-radius:22px;padding:1.15rem;display:flex;flex-direction:column;justify-content:space-between;text-decoration:none;color:inherit;overflow:hidden;border:1px solid rgba(0,0,0,.04);box-shadow:0 6px 18px rgba(70,50,30,.06),0 1.5px 4px rgba(70,50,30,.05);transition:transform .16s,box-shadow .16s;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .hcard:active{transform:translateY(2px) scale(.985);box-shadow:0 3px 10px rgba(70,50,30,.08)}
+  .hcard .hico{width:2.9rem;height:2.9rem;border-radius:15px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.72)}
+  .hcard .hico svg{width:1.75rem;height:1.75rem}
+  .hcard .htxt{margin-top:auto}
+  .hcard h2{font-size:1.16rem;font-weight:800;letter-spacing:-.02em}
+  .hcard p{margin-top:.22rem;font-size:.76rem;font-weight:600;opacity:.72;line-height:1.35}
+  .hcard .hgo{position:absolute;top:1.15rem;right:1.1rem;opacity:.35;font-size:1.05rem}
+  .c-dinner{background:linear-gradient(155deg,#fef4ec,#fdeee4);color:#7a3417}
+  .c-dinner .hico{color:#e2703a}
+  .c-recipe{background:linear-gradient(155deg,#eef5ef,#e9f2ea);color:#2f5a39}
+  .c-recipe .hico{color:#4f8a5b}
+  .c-restock{background:linear-gradient(155deg,#fdf6e4,#fbf1d9);color:#8a6410}
+  .c-restock .hico{color:#d99a1c}
+  .c-fridge{background:linear-gradient(155deg,#eaf4f6,#e4f1f4);color:#245c6b}
+  .c-fridge .hico{color:#3a8ea3}
   .brand small{color:var(--muted);font-weight:500;font-size:.72rem;margin-left:.35rem}
   .export{font:inherit;font-size:.74rem;font-weight:700;padding:.35rem .6rem;border-radius:8px;cursor:pointer;
     border:1px solid var(--line);background:var(--raised);color:var(--ink-soft);-webkit-tap-highlight-color:transparent}
@@ -328,9 +350,9 @@
 
 <header>
   <div class="head-inner">
-    <div class="brand">윤봄네 냉장고</div>
+    <div class="brand" id="brand" role="button" tabindex="0">윤봄네 냉장고</div>
   </div>
-  <div class="head-inner">
+  <div class="head-inner tabrow">
     <div class="tabs" role="tablist" style="flex:1">
       <button role="tab" aria-selected="true" data-view="recommend">오늘의저녁</button>
       <button role="tab" aria-selected="false" data-view="recipe">레시피</button>
@@ -342,6 +364,33 @@
 </header>
 
 <div class="wrap">
+  <!-- 홈 (첫 화면: 2x2 카드) -->
+  <section class="view home" id="view-home">
+    <div class="home-greet">오늘 저녁, 뭐 먹지? <b>🍚</b></div>
+    <div class="home-grid" id="homeGrid">
+      <a class="hcard c-dinner" data-view="recommend">
+        <div class="hico"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21h28a13 13 0 0 1-26 0"/><path d="M6 21h28"/><path d="M15 8c0 3-2 3-2 5.5M20 6c0 3-2 3-2 5.5M25 8c0 3-2 3-2 5.5"/></svg></div>
+        <span class="hgo">›</span>
+        <div class="htxt"><h2>오늘의저녁</h2><p>AI가 골라주는 한 상</p></div>
+      </a>
+      <a class="hcard c-recipe" data-view="recipe">
+        <div class="hico"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11c-3.4-2.2-8-2.8-12-2v20c4-.8 8.6-.2 12 2 3.4-2.2 8-2.8 12-2V9c-4-.8-8.6-.2-12 2z"/><path d="M20 11v22"/></svg></div>
+        <span class="hgo">›</span>
+        <div class="htxt"><h2>레시피 창고</h2><p>우리집 검증 레시피</p></div>
+      </a>
+      <a class="hcard c-restock" data-view="input">
+        <div class="hico"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 15h24l-2.5 17.5a1 1 0 0 1-1 .5H11.5a1 1 0 0 1-1-.5z"/><path d="M14 15a6 6 0 0 1 12 0"/><path d="M16.5 21v6M23.5 21v6"/></svg></div>
+        <span class="hgo">›</span>
+        <div class="htxt"><h2>식재료 채우기</h2><p>말하면 담기는 냉장고</p></div>
+      </a>
+      <a class="hcard c-fridge" data-view="stock">
+        <div class="hico"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="11" y="5" width="18" height="30" rx="4"/><path d="M11 17h18"/><path d="M15.5 10v3.5M15.5 21v4.5"/></svg></div>
+        <span class="hgo">›</span>
+        <div class="htxt"><h2>윤봄네냉장고</h2><p>지금 뭐가 있더라?</p></div>
+      </a>
+    </div>
+  </section>
+
   <!-- 입력 -->
   <section class="view hidden" id="view-input">
     <div class="mic-wrap">
@@ -420,7 +469,7 @@
   </section>
 
   <!-- 오늘의저녁 (추천) -->
-  <section class="view" id="view-recommend">
+  <section class="view hidden" id="view-recommend">
     <div class="rec-intro" id="recIntro">
       <button class="rec-go" id="recGo" type="button">🍚 오늘 저녁 추천 받기</button>
       <div class="rec-sub" id="recSub">냉장고 재고 + 우리집 레시피로 한 상 3개를 골라줘요 (약 30초)</div>
@@ -1485,17 +1534,30 @@
   }
 
   // ── 탭 전환 ──
-  document.querySelector(".tabs").addEventListener("click",function(e){
-    var b=e.target.closest("button"); if(!b)return;
-    Array.prototype.forEach.call(this.querySelectorAll("button"),function(x){x.setAttribute("aria-selected",x===b?"true":"false");});
-    var v=b.dataset.view;
+  // 네비게이션 공용 — 탭·홈카드·로고 모두 이걸로. v="home"이면 홈, 그 외 view-<v>.
+  function showView(v, auto){
+    document.body.classList.toggle("home-active", v==="home");
+    // 탭 하이라이트 (홈이면 선택 없음)
+    Array.prototype.forEach.call(document.querySelectorAll(".tabs button"),function(x){ x.setAttribute("aria-selected", x.dataset.view===v?"true":"false"); });
     Array.prototype.forEach.call(document.querySelectorAll(".wrap > .view"),function(sec){ sec.classList.add("hidden"); });
     var show=document.getElementById("view-"+v); if(show) show.classList.remove("hidden");
     if(v==="stock") renderStock();
     if(v==="recipe") loadMenus();
     if(v==="shop") renderShop();
-    if(v==="recommend"){ loadRecCache(false); renderRecent(); }
+    if(v==="recommend"){ loadRecCache(!!auto); renderRecent(); }
+    window.scrollTo(0,0);
+  }
+  document.querySelector(".tabs").addEventListener("click",function(e){
+    var b=e.target.closest("button"); if(!b)return; showView(b.dataset.view, false);
   });
+  // 홈 카드 → 각 화면 (오늘의저녁은 자동 추천 생성)
+  document.getElementById("homeGrid").addEventListener("click",function(e){
+    var c=e.target.closest(".hcard"); if(!c)return; var v=c.dataset.view; showView(v, v==="recommend");
+  });
+  // 로고 탭 → 홈으로
+  var brandEl=document.getElementById("brand");
+  brandEl.addEventListener("click",function(){ showView("home"); });
+  brandEl.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); showView("home"); } });
 
   // ── 텍스트/추가 입력 ──
   document.getElementById("textgo").addEventListener("click",function(){ acquireWake(); var v=document.getElementById("textin").value; if(v.trim()){ startConfirm(v); document.getElementById("textin").value=""; } });
@@ -1585,7 +1647,8 @@
   function hideErr(){ document.getElementById("errNote").classList.remove("show"); }
   function esc(s){ return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
 
-  renderStock(); renderSession(); acquireWake(); loadRecCache(true); renderRecent();  // 열면 오늘의저녁 자동 구성
+  renderStock(); renderSession(); acquireWake(); renderRecent();
+  showView("home");  // 첫 화면 = 홈(2x2 카드). 추천은 '오늘의저녁' 진입 시 자동 생성.
   sbBoot();   // 공유 냉장고 동기화 (로컬 우선 → 당겨 병합 → 밀어올림)
 })();
 </script>
