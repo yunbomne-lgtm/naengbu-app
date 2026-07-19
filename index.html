@@ -8,7 +8,8 @@
      v0.20: 오늘의저녁 단일선택(하나 고르면 확정, '메뉴 다시 선택하기'로 복구+차감복원). 사올것이 이미 재고면 '집에 있음' 표시+장보기 제외. 냉장고=역할별(주재료/부재료/반찬/간식/양념류/기타) 그룹+보관배지, 상단 칸탭 제거, 칸마다 카드. 탭순서 오늘의저녁·레시피·식재료·장보기·냉장고. 장보기 체크 오른쪽+구매함 정리. 없앰→소진. 레시피 목록 상단·추가버튼 아래로.
      v0.21: 냉장고 상단 역할 인덱스(필터, 맨 뒤 '전체'). 국물용멸치·다시마·김은 NAME_ROLE로 기타. 레시피 추가폼을 별도 페이지(view-recipe-add)로 완전 분리 — 목록 화면엔 폼 없음, 하단 추가버튼→별도 페이지.
      v0.22: 잔멸치→부재료(NAME_ROLE). MASTER에 총각김치·갓김치 추가(김치·절임=반찬). 갓김치 분류 기타→김치·절임(DB). 김치·총각김치 냉장 재고 추가.
-     v0.23: 추천 카드 레시피 구조화 — 메인 레시피 먼저 펼쳐 보이고 반찬은 각자 토글로 아래 확장. 레시피=재료+조리과정만(플레이팅/상차림 서술 배제). 추천 함수 출력 스키마를 메뉴별 요리(메인1+반찬N)로 변경(api/recommend.js). 구버전 캐시(플랫 레시피)는 plain 폴백. -->
+     v0.23: 추천 카드 레시피 구조화 — 메인 레시피 먼저 펼쳐 보이고 반찬은 각자 토글로 아래 확장. 레시피=재료+조리과정만(플레이팅/상차림 서술 배제). 추천 함수 출력 스키마를 메뉴별 요리(메인1+반찬N)로 변경(api/recommend.js). 구버전 캐시(플랫 레시피)는 plain 폴백.
+     v0.24: 저녁 먹은 기록(meal_logs, 트랙 A). 오늘의저녁 하단에 자연어 입력("김치찌개 먹었어"/"외식했어 스파게티")→파싱→컨펌→기록. 추천 '확정' 시 자동 기록(source=확정, 취소 시 철회). 최근 7개 기록 표시·삭제. 실시간 공유. 추천 함수가 최근1주 제외+최근4주 빈도 신호를 프롬프트에 주입. -->
 <title>윤봄네 냉장고 — 입력</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
@@ -251,6 +252,33 @@
   .rc-sub-btn[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent);border-color:transparent}
   .rc-sub-body{margin-top:.5rem}
   .rc-sub-body.hidden{display:none}
+  /* 저녁 먹은 기록 */
+  .meal-log{margin-top:1.4rem;padding-top:1rem;border-top:1px solid var(--line)}
+  .ml-title{font-size:.98rem;font-weight:800;margin-bottom:.55rem}
+  .ml-title span{display:block;font-size:.76rem;font-weight:600;color:var(--muted);margin-top:.15rem}
+  .ml-input{display:flex;gap:.5rem}
+  .ml-input input{flex:1;font:inherit;font-size:1rem;padding:.6rem .7rem;border:1px solid var(--line);border-radius:10px;background:var(--raised);color:var(--ink)}
+  .ml-input button{font:inherit;font-weight:800;font-size:.95rem;padding:.6rem 1rem;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer;white-space:nowrap}
+  :root[data-theme="dark"] .ml-input button{color:#0d1114}
+  @media(prefers-color-scheme:dark){.ml-input button{color:#0d1114}}
+  .ml-confirm{margin-top:.6rem;background:var(--ground);border:1px solid var(--line);border-radius:10px;padding:.7rem .8rem}
+  .ml-confirm.hidden{display:none}
+  .ml-c-line{font-size:1rem;margin-bottom:.55rem}
+  .ml-c-line b{font-weight:800}
+  .ml-badge{font-size:.68rem;font-weight:800;letter-spacing:.03em;padding:.12rem .45rem;border-radius:999px;margin-right:.4rem}
+  .ml-badge.수동{color:var(--accent);background:var(--accent-soft)}
+  .ml-badge.외식{color:var(--cool);background:var(--accent-soft)}
+  .ml-c-acts{display:flex;gap:.5rem}
+  .ml-c-acts .save{flex:1;font:inherit;font-weight:800;padding:.5rem;border:0;border-radius:9px;background:var(--accent);color:#fff;cursor:pointer}
+  :root[data-theme="dark"] .ml-c-acts .save{color:#0d1114}
+  @media(prefers-color-scheme:dark){.ml-c-acts .save{color:#0d1114}}
+  .ml-c-acts .cancel{font:inherit;font-weight:700;padding:.5rem .9rem;border:1px solid var(--line);border-radius:9px;background:var(--raised);color:var(--muted);cursor:pointer}
+  .ml-recent{margin-top:.8rem;display:flex;flex-direction:column;gap:.35rem}
+  .ml-row{display:flex;align-items:center;gap:.5rem;font-size:.9rem}
+  .ml-row .d{color:var(--muted);font-size:.8rem;min-width:3.6rem}
+  .ml-row .m{flex:1;color:var(--ink-soft)}
+  .ml-row .s{font-size:.68rem;font-weight:800;color:var(--muted)}
+  .ml-row .x{border:0;background:none;color:var(--muted);cursor:pointer;font-size:1rem;padding:0 .2rem;line-height:1}
 
   /* 장보기 */
   .shop-count{font-size:.85rem;color:var(--muted);margin-bottom:.6rem;font-weight:700}
@@ -362,6 +390,17 @@
       <div class="rec-sub" id="recSub">냉장고 재고 + 우리집 레시피로 한 상 3개를 골라줘요 (약 30초)</div>
     </div>
     <div class="rec-cards" id="recCards"></div>
+
+    <!-- 저녁 먹은 기록 (트랙 A 학습용) — 원하는 날만 자유롭게 -->
+    <div class="meal-log" id="mealLog">
+      <div class="ml-title">🍽️ 오늘 저녁 뭐 먹었어요? <span>기록하면 추천이 우리집에 맞춰져요</span></div>
+      <div class="ml-input">
+        <input id="mlText" type="text" autocomplete="off" placeholder="예: 김치찌개 먹었어 · 외식했어 스파게티">
+        <button id="mlAdd" type="button">기록</button>
+      </div>
+      <div class="ml-confirm hidden" id="mlConfirm"></div>
+      <div class="ml-recent" id="mlRecent"></div>
+    </div>
   </section>
 </div>
 
@@ -490,7 +529,7 @@
         }
         return flushDirty();
       })
-      .then(function(){ sbOK=true; var d=load(LS_DIRTY,[]); setSync(d.length?"off":"ok"); initRealtime(); })
+      .then(function(){ sbOK=true; var d=load(LS_DIRTY,[]); setSync(d.length?"off":"ok"); initRealtime(); pullMeals(); })
       .catch(function(){ sbOK=false; setSync("off"); });
   }
   // 다른 폰 변경을 반영: 포커스 복귀 시 재고 다시 당김 (실시간이 끊겨도 되는 안전망)
@@ -509,6 +548,7 @@
       rtClient.channel("naengbu-shared")
         .on("postgres_changes",{event:"*",schema:"public",table:"inventory"}, rtRefreshInv)
         .on("postgres_changes",{event:"*",schema:"public",table:"ingredients"}, function(){ pullCatalog().then(rtRefreshInv).catch(function(){}); })
+        .on("postgres_changes",{event:"*",schema:"public",table:"meal_logs"}, function(){ if(rtTimer) clearTimeout(rtTimer); setTimeout(function(){ pullMeals(); }, 400); })
         .subscribe(function(status){
           if(status==="SUBSCRIBED"){ rtLive=true; setSync("ok"); }
           else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"||status==="CLOSED"){ rtLive=false; setSync(sbOK?"ok":"off"); }
@@ -991,6 +1031,7 @@
   // ── 추천 (Vercel 함수 → Claude) ──
   var REC_URL="https://naengbu-api.vercel.app/api/recommend";
   var LS_REC="naengbu_rec";
+  var LS_MEALS="naengbu_meals";   // 저녁 먹은 기록 로컬 미러 (오프라인/즉시표시)
   function recToday(){ return new Date().toLocaleDateString("en-CA"); } // YYYY-MM-DD(로컬)
   // auto=true면 오늘 캐시가 없을 때 자동으로 추천 생성(서비스 열면 오늘의저녁 자동 구성)
   function loadRecCache(auto){
@@ -1131,6 +1172,7 @@
     });
     if(used.length){ save(LS_INV,inv); syncWrite(uniq(used.map(function(u){return u.n;}))); renderStock(); }
     var cch=load(LS_REC,null); if(cch){ cch.chosen=idx; cch.used=used; save(LS_REC,cch); }
+    logMeal(c.메인||c.이름, "확정", null, true);   // 확정=오늘 먹은 것으로 자동 기록 (트랙 A)
     renderRecFromCache();
     window.scrollTo({top:0,behavior:"smooth"});
     var addN=(c.사올것||[]).length;
@@ -1147,10 +1189,107 @@
     });
     if(restored.length){ save(LS_INV,inv); syncWrite(uniq(restored)); renderStock(); }
     cch.chosen=null; cch.used=[]; save(LS_REC,cch);
+    unlogTodayConfirmed();   // 확정 취소 → 오늘 자동기록한 '확정' 로그 철회
     renderRecFromCache();
     toast("메뉴 다시 선택"+(restored.length?" · "+restored.length+"칸 복구":""));
   }
   document.getElementById("recGo").addEventListener("click",fetchRec);
+
+  // ── 저녁 먹은 기록 (meal_logs) — 트랙 A 학습 신호 ──
+  // 로컬 미러(LS_MEALS)로 즉시 표시·오프라인 대비, Supabase가 진실. 두 폰 실시간 공유.
+  function todayISO(){ var d=new Date(); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
+  function loadMeals(){ return load(LS_MEALS,[])||[]; }
+  function saveMeals(a){ save(LS_MEALS,a); }
+  // 자연어 파싱 — "오늘 김치찌개 먹었어" → 수동/김치찌개, "외식했어 스파게티 요기집으로" → 외식/스파게티(요기집)
+  function parseMeal(raw){
+    var t=(raw||"").trim(); if(!t) return null;
+    var out=/외식|사\s?먹|배달|시켜|시킴|나가서|밖에서/.test(t);
+    var s=t
+      .replace(/외식했어요?|외식함|외식|사\s?먹었어요?|사\s?먹음|배달\s?시켰어요?|배달|시켜\s?먹었어요?|시켜먹음|나가서|밖에서/g," ")
+      .replace(/오늘저녁에?|오늘\s?저녁|오늘은|오늘|저녁으로|저녁에|저녁/g," ")
+      .replace(/먹었어요?|먹었다|먹음|먹었|해먹었어요?|해먹음|했어요?|먹고|먹는다/g," ")
+      .replace(/[.,!~]/g," ")
+      .replace(/\s+/g," ").trim();
+    // 조사 정리 (끝의 으로/로/를/을/이랑/랑/하고)
+    var parts=s.split(" ").map(function(w){ return w.replace(/(으로|로|를|을|이랑|랑|하고|이|가)$/,""); }).filter(Boolean);
+    var menu, note=null;
+    if(out){ menu=parts[0]||"외식"; if(parts.length>1) note=parts.slice(1).join(" "); }
+    else { menu=parts.join(" "); }
+    menu=(menu||"").trim(); if(!menu) return null;
+    return { menu:menu, source: out?"외식":"수동", note:note };
+  }
+  function logMeal(menu, source, note, replaceConfirmed){
+    menu=(menu||"").trim(); if(!menu) return;
+    var day=todayISO();
+    var meals=loadMeals();
+    if(replaceConfirmed){ // 확정 자동기록은 하루 1개만 — 오늘 확정 로그 교체
+      meals=meals.filter(function(m){ return !(m.eaten_on===day && m.source==="확정"); });
+    }
+    var row={ id:"loc_"+Date.now()+"_"+Math.random().toString(36).slice(2,6), household_id:SB_HH, eaten_on:day, menu_name:menu, source:source||"수동", note:note||null, created_at:new Date().toISOString() };
+    meals.unshift(row); saveMeals(meals); renderRecent();
+    // Supabase 반영 (best-effort — 실패해도 로컬엔 남음)
+    var pre=replaceConfirmed
+      ? sbFetch("DELETE","/meal_logs?household_id=eq."+SB_HH+"&eaten_on=eq."+day+"&source=eq."+encodeURIComponent("확정")).catch(function(){})
+      : Promise.resolve();
+    pre.then(function(){
+      return sbFetch("POST","/meal_logs",{ household_id:SB_HH, eaten_on:day, menu_name:menu, source:source||"수동", note:note||null },{Prefer:"return=representation"});
+    }).then(function(res){
+      if(res&&res[0]&&res[0].id){ // 로컬 임시 id를 서버 id로 교체
+        var m2=loadMeals(); var hit=m2.filter(function(x){return x.id===row.id;})[0]; if(hit){ hit.id=res[0].id; saveMeals(m2); }
+      }
+    }).catch(function(){});
+  }
+  function unlogTodayConfirmed(){
+    var day=todayISO();
+    var meals=loadMeals().filter(function(m){ return !(m.eaten_on===day && m.source==="확정"); });
+    saveMeals(meals); renderRecent();
+    sbFetch("DELETE","/meal_logs?household_id=eq."+SB_HH+"&eaten_on=eq."+day+"&source=eq."+encodeURIComponent("확정")).catch(function(){});
+  }
+  function deleteMeal(id){
+    var meals=loadMeals().filter(function(m){ return m.id!==id; });
+    saveMeals(meals); renderRecent();
+    if(String(id).indexOf("loc_")!==0) sbFetch("DELETE","/meal_logs?id=eq."+encodeURIComponent(id)).catch(function(){});
+  }
+  function pullMeals(){
+    var since=new Date(Date.now()-30*864e5); var s=since.getFullYear()+"-"+("0"+(since.getMonth()+1)).slice(-2)+"-"+("0"+since.getDate()).slice(-2);
+    return sbFetch("GET","/meal_logs?household_id=eq."+SB_HH+"&eaten_on=gte."+s+"&select=id,eaten_on,menu_name,source,note&order=eaten_on.desc,created_at.desc")
+      .then(function(rows){ if(rows){ saveMeals(rows); renderRecent(); } }).catch(function(){});
+  }
+  var MLD=["일","월","화","수","목","금","토"];
+  function mdLabel(iso){ var d=new Date(iso+"T00:00:00"); var t=new Date(todayISO()+"T00:00:00"); var diff=Math.round((t-d)/864e5);
+    if(diff===0) return "오늘"; if(diff===1) return "어제"; return (d.getMonth()+1)+"/"+d.getDate()+"("+MLD[d.getDay()]+")"; }
+  function renderRecent(){
+    var el=document.getElementById("mlRecent"); if(!el) return;
+    var meals=loadMeals().slice(0,7);
+    if(!meals.length){ el.innerHTML=""; return; }
+    el.innerHTML=meals.map(function(m){
+      var s=m.source==="확정"?"확정":(m.source==="외식"?"외식":"기록");
+      return '<div class="ml-row" data-id="'+esc(m.id)+'"><span class="d">'+esc(mdLabel(m.eaten_on))+'</span><span class="m">'+esc(m.menu_name)+(m.note?' <span style="color:var(--muted)">('+esc(m.note)+')</span>':'')+'</span><span class="s">'+s+'</span><button class="x" type="button" title="삭제">×</button></div>';
+    }).join("");
+    Array.prototype.forEach.call(el.querySelectorAll(".ml-row"),function(row){
+      row.querySelector(".x").addEventListener("click",function(){ deleteMeal(row.dataset.id); });
+    });
+  }
+  // 입력 → 파싱 → 컨펌 카드
+  function showMealConfirm(p){
+    var box=document.getElementById("mlConfirm");
+    box.classList.remove("hidden");
+    box.innerHTML='<div class="ml-c-line"><span class="ml-badge '+p.source+'">'+(p.source==="외식"?"외식":"집밥")+'</span><b>'+esc(p.menu)+'</b>'+(p.note?' <span style="color:var(--muted)">('+esc(p.note)+')</span>':'')+' 먹은 걸로 기록할까요?</div><div class="ml-c-acts"><button class="save" type="button">기록</button><button class="cancel" type="button">취소</button></div>';
+    box.querySelector(".save").addEventListener("click",function(){
+      logMeal(p.menu,p.source,p.note,false);
+      box.classList.add("hidden"); box.innerHTML="";
+      document.getElementById("mlText").value="";
+      toast("‘"+p.menu+"’ 기록됨 ✓");
+    });
+    box.querySelector(".cancel").addEventListener("click",function(){ box.classList.add("hidden"); box.innerHTML=""; });
+  }
+  function submitMeal(){
+    var inp=document.getElementById("mlText"); var p=parseMeal(inp.value);
+    if(!p){ toast("무엇을 먹었는지 적어주세요"); return; }
+    showMealConfirm(p);
+  }
+  document.getElementById("mlAdd").addEventListener("click",submitMeal);
+  document.getElementById("mlText").addEventListener("keydown",function(e){ if(e.key==="Enter") submitMeal(); });
 
   // ── 장보기 (파생: 없음 재료 ∪ 오늘 수락 카드 사올것) ──
   var shopChecked={};
@@ -1213,7 +1352,7 @@
     if(v==="stock") renderStock();
     if(v==="recipe") loadMenus();
     if(v==="shop") renderShop();
-    if(v==="recommend") loadRecCache(false);
+    if(v==="recommend"){ loadRecCache(false); renderRecent(); }
   });
 
   // ── 텍스트/추가 입력 ──
@@ -1304,7 +1443,7 @@
   function hideErr(){ document.getElementById("errNote").classList.remove("show"); }
   function esc(s){ return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
 
-  renderStock(); renderSession(); acquireWake(); loadRecCache(true);  // 열면 오늘의저녁 자동 구성
+  renderStock(); renderSession(); acquireWake(); loadRecCache(true); renderRecent();  // 열면 오늘의저녁 자동 구성
   sbBoot();   // 공유 냉장고 동기화 (로컬 우선 → 당겨 병합 → 밀어올림)
 })();
 </script>
